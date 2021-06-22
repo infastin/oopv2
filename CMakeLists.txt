@@ -36,11 +36,18 @@ add_library(base STATIC
 	${INCLUDE_FOLDER}/Utils.c
 	${INCLUDE_FOLDER}/Messages.c
 	${ITERABLE_FOLDER}/Array.c
-	${INTERFACES_FOLDER}/IterableInterface.c
+	${ITERABLE_FOLDER}/SList.c
+	${ITERABLE_FOLDER}/DList.c
 	${INTERFACES_FOLDER}/StringerInterface.c
 )
 target_include_directories(base PUBLIC ${DIRS})
 
-add_executable(main main.c)
-target_link_libraries(main
-					  base)
+set(EXECUTABLES
+	main
+	aud4
+	aud8)
+
+foreach(EXEC IN LISTS EXECUTABLES)
+	add_executable(${EXEC} ${EXEC}.c)
+	target_link_libraries(${EXEC} base m)
+endforeach()

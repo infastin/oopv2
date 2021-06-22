@@ -107,16 +107,19 @@ size_t sizeOf(const void *self)
 
 static Object* object_ctor(Object *self, va_list *ap)
 {
+	return_val_if_fail(IS_OBJECT(self), NULL);
 	return self;
 }
 
 static Object* object_dtor(Object *self, va_list *ap)
 {
+	return_val_if_fail(IS_OBJECT(self), NULL);
 	return self;
 }
 
 static Object* object_cpy(const Object *self, Object *object)
 {
+	return_val_if_fail(IS_OBJECT(self), NULL);
 	return object;
 }
 
@@ -251,32 +254,40 @@ Type object_class_get_type(void)
 
 static Object* ctor(Object *self, va_list *ap)
 {
+	return_val_if_fail(IS_OBJECT(self), NULL);
+
 	const ObjectClass *class = OBJECT_GET_CLASS(self);
-	return_val_if_fail(class->ctor != NULL, NULL);
+	exit_if_fail(class->ctor != NULL);
 
 	return class->ctor(self, ap);
 }
 
 static Object* dtor(Object *self, va_list *ap)
 {
+	return_val_if_fail(IS_OBJECT(self), NULL);
+
 	const ObjectClass *class = OBJECT_GET_CLASS(self);
-	return_val_if_fail(class->dtor != NULL, NULL);
+	exit_if_fail(class->dtor != NULL);
 
 	return class->dtor(self, ap);
 }
 
 static Object* cpy(const Object *self, Object *object)
 {
+	return_val_if_fail(IS_OBJECT(self) && IS_OBJECT(object), NULL);
+
 	const ObjectClass *class = OBJECT_GET_CLASS(self);
-	return_val_if_fail(class->cpy != NULL, NULL);
+	exit_if_fail(class->cpy != NULL);
 
 	return class->cpy(self, object);
 }
 
 Object* object_new(Type object_type, ...)
 {
+	return_val_if_fail(IS_OBJECT_CLASS(object_type), NULL);
+
 	const ObjectClass *class = OBJECT_CLASS(object_type);
-	return_val_if_fail(class->size != 0, NULL);
+	exit_if_fail(class->size != 0);
 
 	Object *object = (Object*)calloc(1, class->size);
 
@@ -312,8 +323,10 @@ void object_delete(Object *self, ...)
 
 Object* object_copy(const Object *self)
 {
+	return_val_if_fail(IS_OBJECT(self), NULL);
+
 	const ObjectClass *class = OBJECT_GET_CLASS(self);
-	return_val_if_fail(class->size != 0, NULL);
+	exit_if_fail(class->size != 0);
 
 	Object *object = (Object*)calloc(1, class->size);
 
@@ -337,19 +350,25 @@ Object* object_copy(const Object *self)
 	return object;
 }
 
-void object_set(Object *self, ...)
+Object* object_set(Object *self, ...)
 {
+	return_val_if_fail(IS_OBJECT(self), NULL);
+
 	const ObjectClass *class = OBJECT_GET_CLASS(self);
-	return_if_fail(class->set != NULL);
+	return_val_if_fail(class->set != NULL, NULL);
 
 	va_list ap;
 	va_start(ap, self);
-	class->set(self, &ap);
+	Object *result = class->set(self, &ap);
 	va_end(ap);
+
+	return result;
 }
 
 void object_get(const Object *self, ...)
 {
+	return_if_fail(IS_OBJECT(self));
+
 	const ObjectClass *class = OBJECT_GET_CLASS(self);
 	return_if_fail(class->get != NULL);
 
@@ -362,7 +381,7 @@ void object_get(const Object *self, ...)
 const ObjectClass* object_super(const ObjectClass *self)
 {
 	return_val_if_fail(IS_OBJECT_CLASS(self), NULL);
-	return_val_if_fail(self->super != NULL, NULL);
+	exit_if_fail(self->super != NULL);
 
 	return self->super;
 }
@@ -370,7 +389,9 @@ const ObjectClass* object_super(const ObjectClass *self)
 Object* object_super_ctor(Type object_type, Object *self, va_list *ap)
 {
 	const ObjectClass *superclass = object_super((const ObjectClass*) object_type);
-	return_val_if_fail(superclass->ctor != NULL, NULL);
+	
+	return_val_if_fail(superclass != NULL, NULL);
+	exit_if_fail(superclass->ctor != NULL);
 
 	return superclass->ctor(self, ap);
 }
@@ -378,7 +399,9 @@ Object* object_super_ctor(Type object_type, Object *self, va_list *ap)
 Object* object_super_dtor(Type object_type, Object *self, va_list *ap)
 {
 	const ObjectClass *superclass = object_super((const ObjectClass*) object_type);
-	return_val_if_fail(superclass->dtor != NULL, NULL);
+	
+	return_val_if_fail(superclass != NULL, NULL);
+	exit_if_fail(superclass->dtor != NULL);
 
 	return superclass->dtor(self, ap);
 }
@@ -386,7 +409,9 @@ Object* object_super_dtor(Type object_type, Object *self, va_list *ap)
 Object* object_super_cpy(Type object_type, const Object *self, Object *object)
 {
 	const ObjectClass *superclass = object_super((const ObjectClass*) object_type);
-	return_val_if_fail(superclass->cpy != NULL, NULL);
+	
+	return_val_if_fail(superclass != NULL, NULL);
+	exit_if_fail(superclass->cpy != NULL);
 
 	return superclass->cpy(self, object);
 }

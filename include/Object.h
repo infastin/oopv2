@@ -9,7 +9,10 @@
 
 #define MAGIC_NUM 0xAb0bA
 
-typedef void (*voidf)(void);
+typedef void (*VoidFunc)(void);
+typedef int  (*CmpFunc)(const void *a, const void *b);
+typedef void (*FreeFunc)(void *ptr);
+typedef void (*JustFunc)(void *data, void *userdata);
 
 #define TOSTR0(v) #v
 #define TOSTR(v) TOSTR0(v)
@@ -106,8 +109,6 @@ typedef void (*voidf)(void);
 	typedef struct _##ModuleObjName##Class ModuleObjName##Class; 							\
 	DECLARE_TYPE_BODY(ModuleObjName, module_obj_name, MODULE_OBJ_NAME)
 
-
-
 typedef struct _Object Object;
 typedef struct _ObjectClass ObjectClass;
 
@@ -131,8 +132,8 @@ struct _ObjectClass
 	Object* (*dtor)(Object *self, va_list *ap);
 	Object* (*cpy)(const Object *self, Object *object);
 
-	void  (*set)(Object *self, va_list *ap);
-	void  (*get)(const Object *self, va_list *ap);
+	Object* (*set)(Object *self, va_list *ap);
+	void  	(*get)(const Object *self, va_list *ap);
 };
 
 #define OBJECT_TYPE (object_get_type())
@@ -160,7 +161,7 @@ Object* object_new(Type object_type, ...);
 void    object_delete(Object *self, ...);
 Object* object_copy(const Object *self);
 
-void object_set(Object *self, ...);
+Object* object_set(Object *self, ...);
 void object_get(const Object *self, ...);
 
 const ObjectClass* object_super(const ObjectClass *self);

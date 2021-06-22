@@ -8,17 +8,14 @@
 #include "Messages.h"
 #include "Array.h"
 #include "Object.h"
-#include "IterableInterface.h"
 #include "StringerInterface.h"
 #include "Utils.h"
 
 /* Predefinitions {{{ */
 
-void iterable_interface_init(IterableInterface *iface);
-void stringer_interface_init(StringerInterface *iface);
+static void stringer_interface_init(StringerInterface *iface);
 
-DEFINE_TYPE_WITH_IFACES(Array, array, object, 2,
-		USE_INTERFACE(ITERABLE_INTERFACE_TYPE, iterable_interface_init),
+DEFINE_TYPE_WITH_IFACES(Array, array, object, 1,
 		USE_INTERFACE(STRINGER_INTERFACE_TYPE, stringer_interface_init));
 
 typedef struct _ArrayData ArrayData;
@@ -27,7 +24,7 @@ struct _ArrayData
 {
 	bool clear;
 	bool zero_terminated;
-	free_f ff;
+	FreeFunc ff;
 	size_t elemsize;
 	size_t capacity;
 };
@@ -56,7 +53,7 @@ struct _ArrayData
 	}
 
 /* Insertion sort */
-static inline void inssort(char *mass, size_t len, size_t elemsize, cmp_f cmp_func)
+static inline void inssort(void *mass, size_t len, size_t elemsize, CmpFunc cmp_func)
 {
 	for (int i = 1; i < len; ++i) 
 	{
@@ -78,7 +75,7 @@ static inline void inssort(char *mass, size_t len, size_t elemsize, cmp_f cmp_fu
 }
 
 /* Heapsort */
-static inline void heap(char *mass, size_t start, size_t end, size_t elemsize, cmp_f cmp_func)
+static inline void heap(void *mass, size_t start, size_t end, size_t elemsize, CmpFunc cmp_func)
 {
 	size_t root = start;
 
@@ -99,7 +96,7 @@ static inline void heap(char *mass, size_t start, size_t end, size_t elemsize, c
 	}
 }
 
-static inline void heapify(char *mass, size_t len, size_t elemsize, cmp_f cmp_func)
+static inline void heapify(void *mass, size_t len, size_t elemsize, CmpFunc cmp_func)
 {
 	size_t start = (len - 1) >> 1;
 
@@ -114,7 +111,7 @@ static inline void heapify(char *mass, size_t len, size_t elemsize, cmp_f cmp_fu
 	}
 }
 
-static inline void heapsort(char *mass, size_t len, size_t elemsize, cmp_f cmp_func)
+static inline void heapsort(void *mass, size_t len, size_t elemsize, CmpFunc cmp_func)
 {
 	size_t end = len - 1;
 
@@ -132,7 +129,7 @@ static inline void heapsort(char *mass, size_t len, size_t elemsize, cmp_f cmp_f
 }
 
 /* Based on Knuth vol. 3 */
-static inline size_t quicksort_partition(char *mass, size_t left, size_t right, size_t pivot, size_t elemsize, cmp_f cmp_func)
+static inline size_t quicksort_partition(void *mass, size_t left, size_t right, size_t pivot, size_t elemsize, CmpFunc cmp_func)
 {
 	size_t i = left + 1;
 	size_t j = right;
@@ -163,7 +160,7 @@ static inline size_t quicksort_partition(char *mass, size_t left, size_t right, 
 	return 0;
 }
 
-static inline size_t find_median(char *mass, size_t a, size_t b, size_t c, size_t elemsize, cmp_f cmp_func)
+static inline size_t find_median(void *mass, size_t a, size_t b, size_t c, size_t elemsize, CmpFunc cmp_func)
 {
 	if (cmp_func(mass_cell(mass, elemsize, a), mass_cell(mass, elemsize, b)) > 0)
 	{
@@ -185,7 +182,7 @@ static inline size_t find_median(char *mass, size_t a, size_t b, size_t c, size_
 	}
 }
 
-static void quicksort_recursive(char *mass, size_t orig_left, size_t orig_right, size_t elemsize, cmp_f cmp_func)
+static void quicksort_recursive(void *mass, size_t orig_left, size_t orig_right, size_t elemsize, CmpFunc cmp_func)
 {
 	size_t left = orig_left;
 	size_t right = orig_right;
@@ -229,6 +226,7 @@ static void quicksort_recursive(char *mass, size_t orig_left, size_t orig_right,
 		else 
 		{
 			quicksort_recursive(mass, left, new_pivot - 1, elemsize, cmp_func);
+			left = new_pivot + 1;
 		}
 	}
 }
@@ -239,7 +237,7 @@ static void quicksort_recursive(char *mass, size_t orig_left, size_t orig_right,
 
 #define BINARY_SEARCH_LEN_THRESHOLD 32
 
-static bool linear_search(char *mass, const void* target, size_t len, size_t elemsize, cmp_f cmp_func, size_t *index)
+static bool linear_search(void *mass, const void* target, size_t len, size_t elemsize, CmpFunc cmp_func, size_t *index)
 {
 	for (size_t i = 0; i < len; ++i) 
 	{
@@ -253,7 +251,7 @@ static bool linear_search(char *mass, const void* target, size_t len, size_t ele
 	return false;
 }
 
-static bool binary_search(char *mass, const void* target, size_t left, size_t right, size_t elemsize, cmp_f cmp_func, size_t *index)
+static bool binary_search(void *mass, const void* target, size_t left, size_t right, size_t elemsize, CmpFunc cmp_func, size_t *index)
 {
 	while (left <= right) 
 	{
@@ -265,10 +263,10 @@ static bool binary_search(char *mass, const void* target, size_t left, size_t ri
 			return true;
 		}
 
-		if (cmp_func(mass_cell(mass, elemsize, mid), target) > 0)
-			right = mid - 1;
-		else
+		if (cmp_func(mass_cell(mass, elemsize, mid), target) < 0)
 			left = mid + 1;
+		else
+			right = mid - 1;
 	}
 
 	return false;
@@ -311,7 +309,7 @@ static void _Array_growlen(Array *self, size_t add)
 	self->data = data;
 
 	if (arr_data(self)->clear)
-		memset(arr_cell(self, arr_data(self)->capacity), 0, mincap - arr_data(self)->capacity);
+		memset(arr_cell(self, arr_data(self)->capacity), 0, (mincap - arr_data(self)->capacity) * arr_data(self)->elemsize);
 
 	arr_data(self)->capacity = mincap;
 }
@@ -347,12 +345,12 @@ static void _Array_growcap(Array *self, size_t add)
 	self->data = data;
 
 	if (arr_data(self)->clear)
-		memset(arr_cell(self, arr_data(self)->capacity), 0, mincap - arr_data(self)->capacity);
+		memset(arr_cell(self, arr_data(self)->capacity), 0, (mincap - arr_data(self)->capacity) * arr_data(self)->elemsize);
 
 	arr_data(self)->capacity = mincap;
 }
 
-static void _Array_insert_val(Array *self, size_t index, const void *value)
+static Array* _Array_insert(Array *self, size_t index, const void *data)
 {
 	int zt = 0;
 
@@ -364,14 +362,14 @@ static void _Array_insert_val(Array *self, size_t index, const void *value)
 		_Array_growcap(self, (index + zt + 1) - arr_data(self)->capacity);
 
 		if (index + zt >= arr_data(self)->capacity)
-			return;
+			return NULL;
 	}
 	else if (self->len >= arr_data(self)->capacity)
 	{
 		_Array_growcap(self, 1);
 
 		if (self->len >= arr_data(self)->capacity)
-			return;
+			return NULL;
 	}
 
 	if (index + 1 >= self->len && zt)
@@ -390,10 +388,12 @@ static void _Array_insert_val(Array *self, size_t index, const void *value)
 		self->len++;
 	}
 
-	memcpy(arr_cell(self, index), (char*) value, arr_data(self)->elemsize);
+	memcpy(arr_cell(self, index), data, arr_data(self)->elemsize);
+
+	return self;
 }
 
-static void _Array_insert_vals(Array *self, size_t index, const void *data, size_t len)
+static Array* _Array_insert_many(Array *self, size_t index, const void *data, size_t len)
 {
 	int zt = 0;
 
@@ -405,18 +405,14 @@ static void _Array_insert_vals(Array *self, size_t index, const void *data, size
 		_Array_growcap(self, (index + zt + len) - arr_data(self)->capacity);
 
 		if (index + zt + len >= arr_data(self)->capacity)
-		{
-			printf("\n%lu\n", index + zt + len);
-			return;
-		}
+			return NULL;
 	}
 	else if (self->len + len >= arr_data(self)->capacity)
 	{
 		_Array_growcap(self, len);
 
 		if (self->len + len >= arr_data(self)->capacity)
-			return;
-
+			return NULL;
 	}
 
 	if (index + 1 >= self->len && zt)
@@ -436,6 +432,8 @@ static void _Array_insert_vals(Array *self, size_t index, const void *data, size
 
 	for (size_t i = 0; i < len; ++i) 
 		memcpy(arr_cell(self, index + i), mass_cell(data, arr_data(self)->elemsize, i), arr_data(self)->elemsize);
+
+	return self;
 }
 
 /* }}} */
@@ -451,9 +449,9 @@ static Object* Array_ctor(Object *_self, va_list *ap)
 	size_t elemsize = va_arg(*ap, size_t);
 
 	if (clear)
-		self->data = (char*)calloc(1, sizeof(ArrayData) + elemsize);
+		self->data = calloc(1, sizeof(ArrayData) + elemsize);
 	else
-		self->data = (char*)malloc(sizeof(ArrayData) + elemsize);
+		self->data = malloc(sizeof(ArrayData) + elemsize);
 
 	if (self->data == NULL)
 	{
@@ -471,7 +469,7 @@ static Object* Array_ctor(Object *_self, va_list *ap)
 	
 	self->len = 0;
 
-	return (Object*) self;
+	return _self;
 }
 
 static Object* Array_dtor(Object *_self, va_list *ap)
@@ -513,15 +511,17 @@ static Object* Array_cpy(const Object *_self, Object *_object)
 
 	object->len = self->len;
 
-	return (Object*) object;
+	memcpy(arr_mass(object), arr_mass(self), object->len * arr_data(object)->elemsize);
+
+	return _object;
 }
 
-static void Array_set(Object *_self, va_list *ap)
+static Object* Array_set(Object *_self, va_list *ap)
 {
 	Array *self = ARRAY(_self);
 
 	size_t index = va_arg(*ap, size_t);
-	const void *value = va_arg(*ap, const void*);
+	const void *data = va_arg(*ap, const void*);
 
 	int zt = 0;
 
@@ -533,16 +533,18 @@ static void Array_set(Object *_self, va_list *ap)
 		_Array_growcap(self, (index + zt + 1) - arr_data(self)->capacity);
 
 		if (index >= arr_data(self)->capacity)
-			return;
+			return NULL;
 	}
 
-	memcpy(arr_cell(self, index), (char*) value, arr_data(self)->elemsize);
+	memcpy(arr_cell(self, index), data, arr_data(self)->elemsize);
 
 	if (index + 1 >= self->len && zt) 
 		memset(arr_cell(self, index + 1), 0, arr_data(self)->elemsize);
 
 	if (index + zt >= self->len)
 		self->len = index + zt + 1;
+
+	return _self;
 }
 
 static void Array_get(const Object *_self, va_list *ap)
@@ -558,81 +560,67 @@ static void Array_get(const Object *_self, va_list *ap)
 		return;
 	}
 
-	memcpy((char*) ret, arr_cell(self, index), arr_data(self)->elemsize);
+	memcpy(ret, arr_cell(self, index), arr_data(self)->elemsize);
 }
 
-static void Array_insert_val(Iterable *_self, size_t index, const void *value)
+static Array* Array_insert(Array *self, size_t index, const void *data)
 {
-	Array *self = ARRAY((Object*) _self);
-
-	_Array_insert_val(self, index, value);
+	return _Array_insert(self, index, data);
 }
 
-static void Array_insert_vals(Iterable *_self, size_t index, const void *data, size_t len)
+static Array* Array_insert_many(Array *self, size_t index, const void *data, size_t len)
 {
-	Array *self = ARRAY((Object*) _self);
-
-	_Array_insert_vals(self, index, data, len);
+	return _Array_insert_many(self, index, data, len);
 }
 
-static void Array_append_val(Iterable *_self, const void *value)
+static Array* Array_append(Array *self, const void *data)
 {
-	Array *self = ARRAY((Object*) _self);
-
 	if (arr_data(self)->zero_terminated)
 	{
 		if (self->len == 0)
-			_Array_insert_val(self, self->len, value);
+			return _Array_insert(self, self->len, data);
 		else
-			_Array_insert_val(self, self->len - 1, value);
+			return _Array_insert(self, self->len - 1, data);
 	}
 	else
-		_Array_insert_val(self, self->len, value);
+		return _Array_insert(self, self->len, data);
 }
 
-static void Array_append_vals(Iterable *_self, const void *data, size_t len)
+static Array* Array_append_many(Array *self, const void *data, size_t len)
 {
-	Array *self = ARRAY((Object*) _self);
-
 	if (arr_data(self)->zero_terminated)
 	{
 		if (self->len == 0)
-			_Array_insert_vals(self, self->len, data, len);
+			return _Array_insert_many(self, self->len, data, len);
 		else
-			_Array_insert_vals(self, self->len - 1, data, len);
+			return _Array_insert_many(self, self->len - 1, data, len);
 	}
 	else
-		_Array_insert_vals(self, self->len, data, len);
+		return _Array_insert_many(self, self->len, data, len);
 }
 
-static void Array_prepend_val(Iterable *_self, const void *value)
+static Array* Array_prepend(Array *self, const void *data)
 {
-	Array *self = ARRAY((Object*) _self);
-
-	_Array_insert_val(self, 0, value);
+	return _Array_insert(self, 0, data);
 }
 
-static void Array_prepend_vals(Iterable *_self, const void *data, size_t len)
+static Array* Array_prepend_many(Array *self, const void *data, size_t len)
 {
-	Array *self = ARRAY((Object*) _self);
-
-	_Array_insert_vals(self, 0, data, len);
+	return _Array_insert_many(self, 0, data, len);
 }
 
-static void Array_remove_index(Iterable *_self, size_t index, bool to_free)
+static Array* Array_remove_index(Array *self, size_t index, bool to_free)
 {
-	Array *self = ARRAY((Object*) _self);
-
 	if (index >= self->len)
 	{
 		msg_warn("element at [%lu] is out of bounds!", index);
-		return;
+		return NULL;
 	}
 
 	if (arr_data(self)->zero_terminated && (index == self->len - 1))
 	{
 		msg_warn("can't remove terminating zero at [%lu]!", index);
-		return;
+		return NULL;
 	}
 
 	if (to_free)
@@ -641,22 +629,22 @@ static void Array_remove_index(Iterable *_self, size_t index, bool to_free)
 	memmove(arr_cell(self, index), arr_cell(self, index + 1), (self->len - index - 1) * arr_data(self)->elemsize);
 	
 	self->len--;
+
+	return self;
 }
 
-static void Array_remove_range(Iterable *_self, size_t index, size_t len, bool to_free)
+static Array* Array_remove_range(Array *self, size_t index, size_t len, bool to_free)
 {
-	Array *self = ARRAY((Object*) _self);
-
 	if (index + len >= self->len)
 	{
 		msg_warn("range [%lu:%lu] is out of bounds!", index, index + len - 1);
-		return;
+		return NULL;
 	}
 
 	if (arr_data(self)->zero_terminated && (index + len == self->len - 1))
 	{
 		msg_warn("can't remove range [%lu:%lu] since it's overlapping terminating zero!", index, index + len - 1);
-		return;
+		return NULL;
 	}
 
 	if (to_free)
@@ -666,12 +654,12 @@ static void Array_remove_range(Iterable *_self, size_t index, size_t len, bool t
 	memmove(arr_cell(self, index), arr_cell(self, index + len), (self->len - len - index) * arr_data(self)->elemsize);
 
 	self->len -= len;
+
+	return self;
 }
 
-static void Array_sort(Iterable *_self, cmp_f cmp_func)
+static void Array_sort(Array *self, CmpFunc cmp_func)
 {
-	Array *self = ARRAY((Object*) _self);
-
 	if (self->len <= 1)
 		return;
 
@@ -680,10 +668,8 @@ static void Array_sort(Iterable *_self, cmp_f cmp_func)
 	quicksort_recursive(arr_mass(self), 0, len - 1, arr_data(self)->elemsize, cmp_func);
 }
 
-static bool Array_binary_search(Iterable *_self, const void *target, cmp_f cmp_func, size_t *index)
+static bool Array_binary_search(Array *self, const void *target, CmpFunc cmp_func, size_t *index)
 {
-	Array *self = ARRAY((Object*) _self);
-
 	if (self->len == 0)
 		return false;
 
@@ -696,44 +682,62 @@ static bool Array_binary_search(Iterable *_self, const void *target, cmp_f cmp_f
 	return binary_search(arr_mass(self), target, 0, len - 1, arr_data(self)->elemsize, cmp_func, index);
 }
 
-static Iterable* Array_unique(Iterable *_self, cmp_f cmp_func)
+static Array* Array_remove_val(Array *self, const void *target, CmpFunc cmp_func, bool to_free, bool remove_all)
 {
-	Array *self = ARRAY((Object*) _self);
+	bool was_deleted = false;
+	size_t index;
+
+	while (Array_binary_search(self, target, cmp_func, &index)) 
+	{
+		Array_remove_index(self, index, to_free);
+		was_deleted = true;
+
+		if (!remove_all)
+			break;
+	}
+
+	if (!was_deleted)
+		return NULL;
+
+	return self;
+}
+
+static Array* Array_unique(Array *self, CmpFunc cmp_func)
+{
 	Array *result = array_new(arr_data(self)->clear, arr_data(self)->zero_terminated, arr_data(self)->elemsize);
 
 	return_val_if_fail(result != NULL, NULL);
 
 	if (self->len == 0)
-		return (Iterable*) result;
+		return result;
 
 	size_t len = (arr_data(self)->zero_terminated) ? (self->len - 1) : (self->len);
 
 	if (len == 1)
 	{
-		Array_append_val((Iterable*) result, arr_cell(self, 0));
-		return (Iterable*) result;
+		Array_append(result, arr_cell(self, 0));
+		return result;
 	}
 
 	quicksort_recursive(arr_mass(self), 0, len - 1, arr_data(self)->elemsize, cmp_func);
 
 	size_t result_last = 0;
-	Array_append_val((Iterable*) result, arr_cell(self, 0));
+	Array_append(result, arr_cell(self, 0));
 
 	for (size_t i = 1; i < len; ++i) 
 	{
 		if (cmp_func(arr_cell(self, i), arr_cell(result, result_last)) != 0)
 		{
-			Array_append_val((Iterable*) result, arr_cell(self, i));
+			Array_append(result, arr_cell(self, i));
 			result_last++;
 		}
 	}
 
-	return (Iterable*) result;
+	return result;
 }
 
-static void Array_set_free_func(Iterable *_self, free_f free_func)
+static void Array_set_free_func(Array *self, FreeFunc free_func)
 {
-	Array *self = ARRAY((Object*) _self);
 	arr_data(self)->ff = free_func;
 }
 
@@ -741,7 +745,7 @@ static void Array_string(const Stringer *_self, va_list *ap)
 {
 	const Array *self = ARRAY((Object*) _self);
 
-	str_f str_func = va_arg(*ap, str_f);
+	StringFunc str_func = va_arg(*ap, StringFunc);
 
 	if (str_func == NULL)
 		return;
@@ -763,14 +767,28 @@ static void Array_string(const Stringer *_self, va_list *ap)
 	printf("]");
 }
 
+static void* Array_steal(Array *self, size_t *len)
+{
+	void *ret = calloc(self->len, arr_data(self)->elemsize);
+	return_val_if_fail(ret != NULL, NULL);
+
+	memcpy(ret, arr_mass(self), self->len * arr_data(self)->elemsize);
+	*len = self->len;
+
+	self->len = 0;
+	memset(arr_mass(self), 0, self->len * arr_data(self)->elemsize);
+
+	return ret;
+}
+
 /* }}} */
 
 /* Selectors {{{ */
 
-void array_set(Array *self, size_t index, const void *value)
+Array* array_set(Array *self, size_t index, const void *data)
 {
-	return_if_fail(IS_ARRAY(self));
-	object_set((Object*) self, index, value);
+	return_val_if_fail(IS_ARRAY(self), NULL);
+	return (Array*) object_set((Object*) self, index, data);
 }
 
 void array_get(Array *self, size_t index, void *ret)
@@ -779,76 +797,141 @@ void array_get(Array *self, size_t index, void *ret)
 	object_get((Object*) self, index, ret);
 }
 
-void array_append_val(Array *self, const void *value)
-{
-	return_if_fail(IS_ARRAY(self));
-	iterable_append_val((Iterable*) self, value);
-}
-
-void array_prepend_val(Array *self, const void *value)
-{
-	return_if_fail(IS_ARRAY(self));
-	iterable_prepend_val((Iterable*) self, value);
-}
-
-void array_insert_val(Array *self, size_t index, const void *value)
-{
-	return_if_fail(IS_ARRAY(self));
-	iterable_insert_val((Iterable*) self, index, value);
-}
-
-void array_append_vals(Array *self, const void *data, size_t len)
-{
-	return_if_fail(IS_ARRAY(self));
-	iterable_append_vals((Iterable*) self, data, len);
-}
-
-void array_prepend_vals(Array *self, const void *data, size_t len)
-{
-	return_if_fail(IS_ARRAY(self));
-	iterable_prepend_vals((Iterable*) self, data, len);
-}
-
-void array_insert_vals(Array *self, size_t index, const void *data, size_t len)
-{
-	return_if_fail(IS_ARRAY(self));
-	iterable_insert_vals((Iterable*) self, index, data, len);
-}
-
-void array_remove_index(Array *self, size_t index, bool to_free)
-{
-	return_if_fail(IS_ARRAY(self));
-	iterable_remove_index((Iterable*) self, index, to_free);
-}
-
-void array_remove_range(Array *self, size_t index, size_t len, bool to_free)
-{
-	return_if_fail(IS_ARRAY(self));
-	iterable_remove_range((Iterable*) self, index, len, to_free);
-}
-
-void array_sort(Array *self, cmp_f cmp_func)
-{
-	return_if_fail(IS_ARRAY(self));
-	iterable_sort((Iterable*) self, cmp_func);
-}
-
-bool array_binary_search(Array *self, const void *target, cmp_f cmp_func, size_t *index)
-{
-	return_val_if_fail(IS_ARRAY(self), false);
-	return iterable_binary_search((Iterable*) self, target, cmp_func, index);
-}
-
-Array* array_unique(Array *self, cmp_f cmp_func)
+Array* array_copy(Array *self)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-	return (Array*) iterable_unique((Iterable*) self, cmp_func);
+	return (Array*) object_copy((Object*) self);
 }
 
-void array_set_free_func(Array *self, free_f free_func)
+Array* array_append(Array *self, const void *data)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->append != NULL, NULL);
+	return klass->append(self, data);
+}
+
+Array* array_prepend(Array *self, const void *data)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->prepend != NULL, NULL);
+	return klass->prepend(self, data);
+}
+
+Array* array_insert(Array *self, size_t index, const void *data)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->insert != NULL, NULL);
+	return klass->insert(self, index, data);
+}
+
+Array* array_append_many(Array *self, const void *data, size_t len)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->append_many != NULL, NULL);
+	return klass->append_many(self, data, len);
+}
+
+Array* array_prepend_many(Array *self, const void *data, size_t len)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->prepend_many != NULL, NULL);
+	return klass->prepend_many(self, data, len);
+}
+
+Array* array_insert_many(Array *self, size_t index, const void *data, size_t len)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->insert_many != NULL, NULL);
+	return klass->insert_many(self, index, data, len);
+}
+
+Array* array_remove_index(Array *self, size_t index, bool to_free)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->remove_index != NULL, NULL);
+	return klass->remove_index(self, index, to_free);
+}
+
+Array* array_remove_val(Array *self, const void *target, CmpFunc cmp_func, bool to_free, bool remove_all)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->remove_val != NULL, NULL);
+	return klass->remove_val(self, target, cmp_func, to_free, remove_all);
+}
+
+Array* array_remove_range(Array *self, size_t index, size_t len, bool to_free)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->remove_range != NULL, NULL);
+	return klass->remove_range(self, index, len, to_free);
+}
+
+void array_sort(Array *self, CmpFunc cmp_func)
 {
 	return_if_fail(IS_ARRAY(self));
-	iterable_set_free_func((Iterable*) self, free_func);
+
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_if_fail(klass->sort != NULL);
+	klass->sort(self, cmp_func);
+}
+
+bool array_binary_search(Array *self, const void *target, CmpFunc cmp_func, size_t *index)
+{
+	return_val_if_fail(IS_ARRAY(self), false);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->binary_search != NULL, false);
+	return klass->binary_search(self, target, cmp_func, index);
+}
+
+Array* array_unique(Array *self, CmpFunc cmp_func)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_val_if_fail(klass->unique != NULL, NULL);
+	return klass->unique(self, cmp_func);
+}
+
+void array_set_free_func(Array *self, FreeFunc free_func)
+{
+	return_if_fail(IS_ARRAY(self));
+
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+
+	return_if_fail(klass->set_free_func != NULL);
+	klass->set_free_func(self, free_func);
 }
 
 Array* array_new(bool clear, bool zero_terminated, size_t elemsize)
@@ -862,27 +945,21 @@ void array_delete(Array *self, bool free_segment)
 	object_delete((Object*) self, free_segment);
 }
 
+void *array_steal(Array *self, size_t *len)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+	
+	ArrayClass *klass = ARRAY_GET_CLASS(self);
+	
+	return_val_if_fail(klass->steal != NULL, NULL);
+	return klass->steal(self, len);
+}
+
 /* }}} */
 
 /* Init {{{ */
 
-void iterable_interface_init(IterableInterface *iface)
-{
-	iface->append_val = Array_append_val;
-	iface->prepend_val = Array_prepend_val;
-	iface->insert_val = Array_insert_val;
-	iface->append_vals = Array_append_vals;
-	iface->prepend_vals = Array_prepend_vals;
-	iface->insert_vals = Array_insert_vals;
-	iface->remove_index = Array_remove_index;
-	iface->remove_range = Array_remove_range;
-	iface->sort = Array_sort;
-	iface->binary_search = Array_binary_search;
-	iface->unique = Array_unique;
-	iface->set_free_func = Array_set_free_func;
-}
-
-void stringer_interface_init(StringerInterface *iface)
+static void stringer_interface_init(StringerInterface *iface)
 {
 	iface->string = Array_string;
 }
@@ -894,6 +971,21 @@ static void array_class_init(ArrayClass *klass)
 	OBJECT_CLASS(klass)->set = Array_set;
 	OBJECT_CLASS(klass)->get = Array_get;
 	OBJECT_CLASS(klass)->cpy = Array_cpy;
+
+	klass->append = Array_append;
+	klass->prepend = Array_prepend;
+	klass->insert = Array_insert;
+	klass->set_free_func = Array_set_free_func;
+	klass->sort = Array_sort;
+	klass->unique = Array_unique;
+	klass->remove_index = Array_remove_index;
+	klass->remove_val = Array_remove_val;
+	klass->append_many = Array_append_many;
+	klass->prepend_many = Array_prepend_many;
+	klass->insert_many = Array_insert_many;
+	klass->remove_range = Array_remove_range;
+	klass->binary_search = Array_binary_search;
+	klass->steal = Array_steal;
 }
 
 /* }}} */

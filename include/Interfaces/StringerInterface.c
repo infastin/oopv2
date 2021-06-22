@@ -2,6 +2,7 @@
 #include "Interface.h"
 #include "Messages.h"
 #include <stdarg.h>
+#include <stdio.h>
 
 DEFINE_INTERFACE(Stringer, stringer);
 
@@ -19,7 +20,7 @@ void stringer_output(const Stringer *self, ...)
 	va_end(ap);
 }
 
-void stringer_output_va(const Stringer *self, va_list *ap)
+void stringer_outputln(const Stringer *self, ...)
 {
 	return_if_fail(IS_STRINGER(self));
 
@@ -27,5 +28,10 @@ void stringer_output_va(const Stringer *self, va_list *ap)
 
 	return_if_fail(iface->string != NULL);
 
-	iface->string(self, ap);
+	va_list ap;
+	va_start(ap, self);
+	iface->string(self, &ap);
+	va_end(ap);
+	
+	printf("\n");
 }

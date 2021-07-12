@@ -3,8 +3,8 @@
 
 #include <stddef.h>
 
-#include "Object.h"
-#include "StringerInterface.h"
+#include "Base.h"
+#include "Interfaces/StringerInterface.h"
 
 #define DLIST_TYPE (dlist_get_type())
 DECLARE_DERIVABLE_TYPE(DList, dlist, DLIST, Object);
@@ -74,7 +74,18 @@ DList* dlist_free_sibling(DList *self, DListNode *sibling);
 DList* dlist_swap(DList *self, DListNode *a_sib, DListNode *b_sib);
 DList* dlist_splice(DList *self, DListNode *l_sib, DListNode *r_sib, DList *other, DListNode *o_sib);
 
-#define dlist_output(self, str_func, od...) (stringer_output((Stringer*) self, str_func, od))
-#define dlist_outputln(self, str_func, od...) (stringer_outputln((Stringer*) self, str_func, od))
+#define dlist_output(self, str_func...)                       \
+	(                                                         \
+	   (IS_DLIST(self)) ?                                     \
+	   (stringer_output((const Stringer*) self, str_func)) :  \
+	   (return_if_fail_warning(STRFUNC, "IS_DLIST("#self")")) \
+	)
+
+#define dlist_outputln(self, str_func...)                       \
+	(                                                           \
+	  	(IS_DLIST(self)) ?                                      \
+	  	(stringer_outputln((const Stringer*) self, str_func)) : \
+		(return_if_fail_warning(STRFUNC, "IS_DLIST("#self")"))  \
+	)
 
 #endif /* end of include guard: DLIST_H_WSFB7UXG */

@@ -3,8 +3,8 @@
 
 #include <stddef.h>
 
-#include "Object.h"
-#include "StringerInterface.h"
+#include "Base.h"
+#include "Interfaces/StringerInterface.h"
 
 #define SLIST_TYPE (slist_get_type())
 DECLARE_DERIVABLE_TYPE(SList, slist, SLIST, Object);
@@ -66,7 +66,18 @@ void slist_foreach(SList *self, JustFunc func, void *userdata);
 SList* slist_remove_sibling(SList *self, SListNode *sibling);
 SList* slist_free_sibling(SList *self, SListNode *sibling);
 
-#define slist_output(self, str_func...) (stringer_output((Stringer*) self, str_func))
-#define slist_outputln(self, str_func...) (stringer_outputln((Stringer*) self, str_func))
+#define slist_output(self, str_func...)                        \
+	(                                                          \
+		(IS_SLIST(self)) ?                                     \
+		(stringer_output((const Stringer*) self, str_func)) :  \
+		(return_if_fail_warning(STRFUNC, "IS_SLIST("#self")")) \
+	)
+
+#define slist_outputln(self, str_func...)                       \
+	(                                                           \
+		(IS_SLIST(self)) ?                                      \
+		(stringer_outputln((const Stringer*) self, str_func)) : \
+		(return_if_fail_warning(STRFUNC, "IS_SLIST("#self")"))  \
+	)
 
 #endif /* end of include guard: SLIST_H_G08NRKFN */

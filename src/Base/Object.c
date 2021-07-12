@@ -8,11 +8,9 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "Interface.h"
-#include "Messages.h"
-#include "Object.h"
+#include "Base.h"
 
-/* Type checking andsizeOf {{{1 */
+/* Type checking and sizeOf {{{1 */
 
 const void* isObject(const void *_self)
 {
@@ -218,7 +216,7 @@ static const ObjectClass __Object;
 static const ObjectClass __ObjectClass;
 
 static const ObjectClass __Object = {
-	{ MAGIC_NUM, &__ObjectClass, 1 },
+	{ MAGIC_NUM, 1, &__ObjectClass },
 	"Object", &__Object, sizeof(Object), 0, NULL,
 	object_ctor,
 	object_dtor,
@@ -228,7 +226,7 @@ static const ObjectClass __Object = {
 };
 
 static const ObjectClass __ObjectClass = {
-	{ MAGIC_NUM, &__ObjectClass, 1 },
+	{ MAGIC_NUM, 1, &__ObjectClass },
 	"ObjectClass", &__Object, sizeof(ObjectClass), 0, NULL,
 	object_class_ctor,
 	object_class_dtor,
@@ -303,6 +301,31 @@ Object* object_new(Type object_type, ...)
 
 	va_list ap;
 	va_start(ap, object_type);
+	object = ctor(object, &ap);
+	va_end(ap);
+
+	if (object == NULL)
+		msg_error("couldn't create object of type '%s'!", class->name);
+
+	return object;
+}
+
+Object* object_new_stack(Type object_type, void *_object, ...)
+{
+	return_val_if_fail(IS_OBJECT_CLASS(object_type), NULL);
+	return_val_if_fail(_object != NULL, NULL);
+
+	const ObjectClass *class = OBJECT_CLASS(object_type);
+	exit_if_fail(class->size != 0);
+
+	Object *object = (Object*) _object;
+
+	object->magic = MAGIC_NUM;
+	object->klass = class;
+	object->ref_count = 1;
+
+	va_list ap;
+	va_start(ap, _object);
 	object = ctor(object, &ap);
 	va_end(ap);
 

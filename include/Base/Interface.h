@@ -5,7 +5,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-typedef unsigned long Type;
+#include "Definitions.h"
 
 #define IFACE_MAGIC_NUM 0xB00BA
 #define IFACE_TYPE_MAGIC_NUM 0xAAAAA

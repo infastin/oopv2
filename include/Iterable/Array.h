@@ -4,8 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "Object.h"
-#include "StringerInterface.h"
+#include "Base.h"
+#include "Interfaces/StringerInterface.h"
 
 #define ARRAY_TYPE (array_get_type())
 DECLARE_DERIVABLE_TYPE(Array, array, ARRAY, Object);
@@ -38,9 +38,9 @@ struct _Array
 };
 
 Array* array_new(bool clear, bool zero_terminated, size_t elemsize);
-Array* array_copy(Array *self);
+Array* array_copy(const Array *self);
 Array* array_set(Array *self, size_t index, const void *data);
-void array_get(Array *self, size_t index, void *ret);
+void array_get(const Array *self, size_t index, void *ret);
 Array* array_append(Array *self, const void *data);
 Array* array_prepend(Array *self, const void *data);
 Array* array_insert(Array *self, size_t index, const void *data);
@@ -57,7 +57,18 @@ void array_delete(Array *self, bool free_segment);
 void array_set_free_func(Array *self, FreeFunc free_func);
 void *array_steal(Array *self, size_t *len);
 
-#define array_output(self, str_func...) (stringer_output((Stringer*) self, str_func))
-#define array_outputln(self, str_func...) (stringer_outputln((Stringer*) self, str_func))
+#define array_output(self, str_func...)                        \
+	(                                                          \
+	  	(IS_ARRAY(self)) ?                                     \
+	  	(stringer_output((const Stringer*) self, str_func)) :  \
+	  	(return_if_fail_warning(STRFUNC, "IS_ARRAY("#self")")) \
+  	)
+
+#define array_outputln(self, str_func...)                       \
+	(                                                           \
+		(IS_ARRAY(self)) ?                                      \
+		(stringer_outputln((const Stringer*) self, str_func)) : \
+		(return_if_fail_warning(STRFUNC, "IS_ARRAY("#self")"))  \
+	)
 
 #endif /* end of include guard: ARRAY_H_7HHJRIFF */

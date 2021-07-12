@@ -3,13 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
-#include "Interface.h"
-#include "Messages.h"
-#include "Array.h"
-#include "Object.h"
-#include "StringerInterface.h"
-#include "Utils.h"
+#include "Iterable/Array.h"
+#include "Utils/Stuff.h"
+#include "Utils/Sort.h"
 
 /* Predefinitions {{{ */
 
@@ -22,214 +20,17 @@ typedef struct _ArrayData ArrayData;
 
 struct _ArrayData
 {
-	bool clear;
-	bool zero_terminated;
-	FreeFunc ff;
 	size_t elemsize;
 	size_t capacity;
+	FreeFunc ff;
+	bool clear;
+	bool zero_terminated;
 };
 
-#define arr_mass(s) ((char*) &((ArrayData*) (s->data))[1])
-#define arr_cell(s, i) (&((char*) &((ArrayData*) (s->data))[1])[(i) * (arr_data(self)->elemsize)])
-#define arr_data(s) ((ArrayData*) (s->data))
-#define mass_cell(m, e, i) (&((char*) m)[(i) * (e)])
-
-/* }}} */
-
-/* Sorting {{{ */
-
-#define SORT_LEN_THRESHOLD 16
-
-#define SWAP(a, b, elemsize) 				\
-	{ 										\
-		size_t __size = (elemsize); 		\
-		char *__a = (a); char *__b = (b); 	\
-		do 									\
-		{ 									\
-			char __tmp = *__a; 				\
-			*__a++ = *__b; 					\
-			*__b++ = __tmp; 				\
-		} while (--__size > 0); 			\
-	}
-
-/* Insertion sort */
-static inline void inssort(void *mass, size_t len, size_t elemsize, CmpFunc cmp_func)
-{
-	for (int i = 1; i < len; ++i) 
-	{
-		size_t cur = i;
-
-		for (size_t j = i - 1; j >= 0; --j) 
-		{
-			if (cmp_func(mass_cell(mass, elemsize, j), mass_cell(mass, elemsize, cur)) <= 0)
-				break;
-
-			SWAP(mass_cell(mass, elemsize, j), mass_cell(mass, elemsize, cur), elemsize);
-
-			cur = j;
-
-			if (j == 0)
-				break;
-		}
-	}
-}
-
-/* Heapsort */
-static inline void heap(void *mass, size_t start, size_t end, size_t elemsize, CmpFunc cmp_func)
-{
-	size_t root = start;
-
-	while ((root << 1) < end)
-	{
-		size_t child = (root << 1) + 1;
-
-		if ((child < end) && cmp_func(mass_cell(mass, elemsize, child), mass_cell(mass, elemsize, child + 1)) < 0)
-			child++;
-
-		if (cmp_func(mass_cell(mass, elemsize, root), mass_cell(mass, elemsize, child)) < 0)
-		{
-			SWAP(mass_cell(mass, elemsize, root), mass_cell(mass, elemsize, child), elemsize);
-			root = child;
-		}
-		else
-			return;
-	}
-}
-
-static inline void heapify(void *mass, size_t len, size_t elemsize, CmpFunc cmp_func)
-{
-	size_t start = (len - 1) >> 1;
-
-	while (start >= 0) 
-	{
-		heap(mass, start, len - 1, elemsize, cmp_func);
-
-		if (start == 0)
-			break;
-
-		start--;
-	}
-}
-
-static inline void heapsort(void *mass, size_t len, size_t elemsize, CmpFunc cmp_func)
-{
-	size_t end = len - 1;
-
-	if (len <= 1)
-		return;
-
-	heapify(mass, len, elemsize, cmp_func);
-
-	while (end > 0)
-	{
-		SWAP(mass_cell(mass, elemsize, 0), mass_cell(mass, elemsize, end), elemsize);
-		end--;
-		heap(mass, 0, end, elemsize, cmp_func);
-	}
-}
-
-/* Based on Knuth vol. 3 */
-static inline size_t quicksort_partition(void *mass, size_t left, size_t right, size_t pivot, size_t elemsize, CmpFunc cmp_func)
-{
-	size_t i = left + 1;
-	size_t j = right;
-
-	if (pivot != left)
-		SWAP(mass_cell(mass, elemsize, left), mass_cell(mass, elemsize, pivot), elemsize);
-
-	while (1) 
-	{
-		while (cmp_func(mass_cell(mass, elemsize, i), mass_cell(mass, elemsize, left)) < 0)
-			i++;
-
-		while (cmp_func(mass_cell(mass, elemsize, left), mass_cell(mass, elemsize, j)) < 0)
-			j--;
-
-		if (j <= i)
-		{
-			SWAP(mass_cell(mass, elemsize, j), mass_cell(mass, elemsize, left), elemsize);
-			return j;
-		}
-
-		SWAP(mass_cell(mass, elemsize, i), mass_cell(mass, elemsize, j), elemsize);
-
-		i++;
-		j--;
-	}
-
-	return 0;
-}
-
-static inline size_t find_median(void *mass, size_t a, size_t b, size_t c, size_t elemsize, CmpFunc cmp_func)
-{
-	if (cmp_func(mass_cell(mass, elemsize, a), mass_cell(mass, elemsize, b)) > 0)
-	{
-		if (cmp_func(mass_cell(mass, elemsize, b), mass_cell(mass, elemsize, c)) > 0)
-			return b;
-		else if (cmp_func(mass_cell(mass, elemsize, a), mass_cell(mass, elemsize, c)) > 0)
-			return c;
-		else 
-			return a;
-	}
-	else
-	{
-		if (cmp_func(mass_cell(mass, elemsize, a), mass_cell(mass, elemsize, c)) > 0)
-			return a;
-		else if (cmp_func(mass_cell(mass, elemsize, b), mass_cell(mass, elemsize, c)) > 0)
-			return c;
-		else 
-			return b;
-	}
-}
-
-static void quicksort_recursive(void *mass, size_t orig_left, size_t orig_right, size_t elemsize, CmpFunc cmp_func)
-{
-	size_t left = orig_left;
-	size_t right = orig_right;
-	size_t mid;
-
-	size_t pivot;
-	size_t new_pivot;
-
-	int loop_count = 0;
-	const int max_loops = 64 - __builtin_clzll(right - left);
-
-	while (1) 
-	{
-		if (right <= left)
-			return;
-
-		if ((right - left + 1) <= SORT_LEN_THRESHOLD)
-		{
-			inssort(mass_cell(mass, elemsize, left), right - left + 1, elemsize, cmp_func);
-			return;
-		}
-
-		if (++loop_count >= max_loops)
-		{
-			heapsort(mass_cell(mass, elemsize, left), right - left + 1, elemsize, cmp_func);
-			return;
-		}
-
-		mid = left + ((right - left) >> 1);
-		pivot = find_median(mass, left, mid, right, elemsize, cmp_func);
-		new_pivot = quicksort_partition(mass, left, right, pivot, elemsize, cmp_func);
-
-		if (new_pivot == 0)
-			return;
-
-		if ((new_pivot - left - 1) > (right - new_pivot - 1))
-		{
-			quicksort_recursive(mass, new_pivot + 1, right, elemsize, cmp_func);
-			right = new_pivot - 1;
-		}
-		else 
-		{
-			quicksort_recursive(mass, left, new_pivot - 1, elemsize, cmp_func);
-			left = new_pivot + 1;
-		}
-	}
-}
+#define arr_mass(s) ((char*) &((ArrayData*) ((s)->data))[1])
+#define arr_cell(s, i) (&((char*) &((ArrayData*) ((s)->data))[1])[(i) * (arr_data(s)->elemsize)])
+#define arr_data(s) ((ArrayData*) ((s)->data))
+#define mass_cell(m, e, i) (&((char*) (m))[(i) * (e)])
 
 /* }}} */
 
@@ -276,70 +77,28 @@ static bool binary_search(void *mass, const void* target, size_t left, size_t ri
 
 /* Private methods {{{ */
 
-static void _Array_growlen(Array *self, size_t add)
-{
-	if ((self->len + add) <= arr_data(self)->capacity)
-		return;
-
-	size_t mincap = self->len + add;
-
-	size_t cap1 = (size_t) ((double) arr_data(self)->capacity * 1.25);
-	size_t cap2 = arr_data(self)->capacity * 4;
-	size_t cap3 = arr_data(self)->capacity * 8;
-
-	if (mincap > 64 && mincap < cap1)
-		mincap = cap1;
-	else if (mincap > 16 && mincap < cap2)
-		mincap = cap2;
-	else if (mincap < cap3)
-		mincap = cap3;
-	else
-		mincap = pow2l(mincap);
-
-	void *data;
-
-	data = (void*)realloc(self->data, sizeof(ArrayData) + mincap * arr_data(self)->elemsize);
-
-	if (data == NULL)
-	{
-		msg_error("couldn't reallocate memory for array!");
-		return;
-	}
-
-	self->data = data;
-
-	if (arr_data(self)->clear)
-		memset(arr_cell(self, arr_data(self)->capacity), 0, (mincap - arr_data(self)->capacity) * arr_data(self)->elemsize);
-
-	arr_data(self)->capacity = mincap;
-}
-
-static void _Array_growcap(Array *self, size_t add)
+static Array* _Array_growcap(Array *self, size_t add)
 {
 	if (add == 0)
-		return;
+		return self;
 
 	size_t mincap = arr_data(self)->capacity + add;
+	size_t new_allocated = (mincap >> 3) + (mincap < 9 ? 3 : 6);
 
-	size_t cap1 = (size_t) ((double) arr_data(self)->capacity * 1.25);
-	size_t cap2 = arr_data(self)->capacity * 4;
-	size_t cap3 = arr_data(self)->capacity * 8;
+	if (mincap > SIZE_MAX - new_allocated)
+	{
+		msg_error("array capacity overflow!");
+		return NULL;
+	}
 
-	if (mincap > 64 && mincap < cap1)
-		mincap = cap1;
-	else if (mincap > 16 && mincap < cap2)
-		mincap = cap2;
-	else if (mincap < cap3)
-		mincap = cap3;
-	else
-		mincap = pow2l(mincap);
+	mincap += new_allocated;
 
 	void *data = (void*)realloc(self->data, sizeof(ArrayData) + mincap * arr_data(self)->elemsize);
 
 	if (data == NULL)
 	{
 		msg_error("couldn't reallocate memory for array!");
-		return;
+		return NULL;
 	}
 
 	self->data = data;
@@ -348,6 +107,8 @@ static void _Array_growcap(Array *self, size_t add)
 		memset(arr_cell(self, arr_data(self)->capacity), 0, (mincap - arr_data(self)->capacity) * arr_data(self)->elemsize);
 
 	arr_data(self)->capacity = mincap;
+
+	return self;
 }
 
 static Array* _Array_insert(Array *self, size_t index, const void *data)
@@ -359,17 +120,13 @@ static Array* _Array_insert(Array *self, size_t index, const void *data)
 
 	if (index + zt >= arr_data(self)->capacity)
 	{
-		_Array_growcap(self, (index + zt + 1) - arr_data(self)->capacity);
-
-		if (index + zt >= arr_data(self)->capacity)
-			return NULL;
+		self = _Array_growcap(self, (index + zt + 1) - arr_data(self)->capacity);
+		return_val_if_fail(self != NULL, NULL);
 	}
 	else if (self->len >= arr_data(self)->capacity)
 	{
-		_Array_growcap(self, 1);
-
-		if (self->len >= arr_data(self)->capacity)
-			return NULL;
+		self = _Array_growcap(self, 1);
+		return_val_if_fail(self != NULL, NULL);
 	}
 
 	if (index + 1 >= self->len && zt)
@@ -402,17 +159,13 @@ static Array* _Array_insert_many(Array *self, size_t index, const void *data, si
 
 	if (index + zt + len >= arr_data(self)->capacity)
 	{
-		_Array_growcap(self, (index + zt + len) - arr_data(self)->capacity);
-
-		if (index + zt + len >= arr_data(self)->capacity)
-			return NULL;
+		self = _Array_growcap(self, (index + zt + len) - arr_data(self)->capacity);
+		return_val_if_fail(self != NULL, NULL);
 	}
 	else if (self->len + len >= arr_data(self)->capacity)
 	{
-		_Array_growcap(self, len);
-
-		if (self->len + len >= arr_data(self)->capacity)
-			return NULL;
+		self = _Array_growcap(self, len);
+		return_val_if_fail(self != NULL, NULL);
 	}
 
 	if (index + 1 >= self->len && zt)
@@ -530,10 +283,8 @@ static Object* Array_set(Object *_self, va_list *ap)
 
 	if (index + zt >= arr_data(self)->capacity)
 	{
-		_Array_growcap(self, (index + zt + 1) - arr_data(self)->capacity);
-
-		if (index >= arr_data(self)->capacity)
-			return NULL;
+		self = _Array_growcap(self, (index + zt + 1) - arr_data(self)->capacity);
+		return_val_if_fail(self != NULL, NULL);
 	}
 
 	memcpy(arr_cell(self, index), data, arr_data(self)->elemsize);
@@ -553,7 +304,9 @@ static void Array_get(const Object *_self, va_list *ap)
 
 	size_t index = va_arg(*ap, size_t);
 	void *ret = va_arg(*ap, void*);
-
+	
+	return_if_fail(ret != NULL);
+	
 	if (index >= self->len)
 	{
 		msg_warn("element at [%lu] is out of bounds!", index);
@@ -665,7 +418,7 @@ static void Array_sort(Array *self, CmpFunc cmp_func)
 
 	size_t len = (arr_data(self)->zero_terminated) ? (self->len - 1) : (self->len);
 
-	quicksort_recursive(arr_mass(self), 0, len - 1, arr_data(self)->elemsize, cmp_func);
+	quicksort(arr_mass(self), len, arr_data(self)->elemsize, cmp_func);
 }
 
 static bool Array_binary_search(Array *self, const void *target, CmpFunc cmp_func, size_t *index)
@@ -678,7 +431,7 @@ static bool Array_binary_search(Array *self, const void *target, CmpFunc cmp_fun
 	if (len < BINARY_SEARCH_LEN_THRESHOLD)
 		return linear_search(arr_mass(self), target, len, arr_data(self)->elemsize, cmp_func, index);
 
-	quicksort_recursive(arr_mass(self), 0, len - 1, arr_data(self)->elemsize, cmp_func);
+	quicksort(arr_mass(self), len, arr_data(self)->elemsize, cmp_func);
 	return binary_search(arr_mass(self), target, 0, len - 1, arr_data(self)->elemsize, cmp_func, index);
 }
 
@@ -719,7 +472,7 @@ static Array* Array_unique(Array *self, CmpFunc cmp_func)
 		return result;
 	}
 
-	quicksort_recursive(arr_mass(self), 0, len - 1, arr_data(self)->elemsize, cmp_func);
+	quicksort(arr_mass(self), len, arr_data(self)->elemsize, cmp_func);
 
 	size_t result_last = 0;
 	Array_append(result, arr_cell(self, 0));
@@ -788,19 +541,19 @@ static void* Array_steal(Array *self, size_t *len)
 Array* array_set(Array *self, size_t index, const void *data)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-	return (Array*) object_set((Object*) self, index, data);
+	return (Array*)object_set((Object*) self, index, data);
 }
 
-void array_get(Array *self, size_t index, void *ret)
+void array_get(const Array *self, size_t index, void *ret)
 {
 	return_if_fail(IS_ARRAY(self));
-	object_get((Object*) self, index, ret);
+	object_get((const Object*) self, index, ret);
 }
 
-Array* array_copy(Array *self)
+Array* array_copy(const Array *self)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-	return (Array*) object_copy((Object*) self);
+	return (Array*)object_copy((const Object*) self);
 }
 
 Array* array_append(Array *self, const void *data)
@@ -936,7 +689,7 @@ void array_set_free_func(Array *self, FreeFunc free_func)
 
 Array* array_new(bool clear, bool zero_terminated, size_t elemsize)
 {
-	return (Array*) object_new(ARRAY_TYPE, clear, zero_terminated, elemsize);
+	return (Array*)object_new(ARRAY_TYPE, clear, zero_terminated, elemsize);
 }
 
 void array_delete(Array *self, bool free_segment)

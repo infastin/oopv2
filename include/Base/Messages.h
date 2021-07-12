@@ -3,8 +3,6 @@
 
 #include <stdlib.h>
 
-#include "Utils.h"
-
 /*
  *  ERROR: 		Something "serious" has gone wrong. But the program can recover from it.
  *  CRITICAL: 	Same as "ERROR", but program can't recover from it.

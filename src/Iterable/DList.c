@@ -4,12 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Interface.h"
-#include "Messages.h"
-#include "Object.h"
-#include "Utils.h"
-#include "StringerInterface.h"
-#include "DList.h"
+#include "Iterable/DList.h"
 
 /* Predefinitions {{{ */
 
@@ -377,7 +372,7 @@ static DList* DList_free_val(DList *self, const void *target, CmpFunc cmp_func, 
 
 static void DList_string(const Stringer *_self, va_list *ap)
 {
-	const DList *self = DLIST((Object*) _self);
+	const DList *self = DLIST((const Object*) _self);
 
 	StringFunc str_func = va_arg(*ap, StringFunc);
 	DListOutputDirection side = va_arg(*ap, DListOutputDirection);
@@ -626,7 +621,7 @@ static DListNode* DList_insert_before_val(DList *self, const void *target, CmpFu
 
 DList* dlist_new(size_t elemsize)
 {
-	return (DList*) object_new(DLIST_TYPE, elemsize);
+	return (DList*)object_new(DLIST_TYPE, elemsize);
 }
 
 DListNode* dlist_append(DList *self, const void *data)
@@ -757,7 +752,7 @@ DList* dlist_set(DList *self, DListNode *sibling, const void *data)
 	return_val_if_fail(IS_DLIST(self), NULL);
 	return_val_if_fail(sibling != NULL, NULL);
 
-	return (DList*) object_set((Object*) self, sibling, data);
+	return (DList*)object_set((Object*) self, sibling, data);
 }
 
 void dlist_get(const DList *self, DListNode *sibling, void *ret)
@@ -765,7 +760,7 @@ void dlist_get(const DList *self, DListNode *sibling, void *ret)
 	return_if_fail(IS_DLIST(self));
 	return_if_fail(sibling != NULL);
 
-	object_get((Object*) self, sibling, ret);
+	object_get((const Object*) self, sibling, ret);
 }
 
 void dlist_delete(DList *self, bool free_data)
@@ -777,7 +772,7 @@ void dlist_delete(DList *self, bool free_data)
 DList* dlist_copy(const DList *self)
 {
 	return_val_if_fail(IS_DLIST(self), NULL);
-	return (DList*) object_copy((Object*) self);
+	return (DList*)object_copy((const Object*) self);
 }
 
 DList* dlist_swap(DList *self, DListNode *a_sib, DListNode *b_sib)

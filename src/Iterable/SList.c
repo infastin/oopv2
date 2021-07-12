@@ -5,12 +5,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "Interface.h"
-#include "Messages.h"
-#include "SList.h"
-#include "StringerInterface.h"
-#include "Object.h"
-#include "Utils.h"
+#include "Iterable/SList.h"
 
 /* Predefinitions {{{ */
 
@@ -219,6 +214,8 @@ static Object* SList_cpy(const Object *_self, Object *_object)
 		object_delete((Object*) object, 0);
 		return_val_if_fail(start != NULL, NULL);
 	}
+
+	object->start = start;
 
 	SListNode *s_current = self->start->next;
 	SListNode *o_prev = object->start;
@@ -560,7 +557,7 @@ static void SList_foreach(SList *self, JustFunc func, void *userdata)
 
 SList* slist_new(size_t elemsize)
 {
-	return (SList*) object_new(SLIST_TYPE, elemsize);
+	return (SList*)object_new(SLIST_TYPE, elemsize);
 }
 
 void slist_delete(SList *self, bool free_data)
@@ -572,19 +569,19 @@ void slist_delete(SList *self, bool free_data)
 SList* slist_copy(const SList *self)
 {
 	return_val_if_fail(IS_SLIST(self), NULL);
-	return (SList*) object_copy((Object*) self);
+	return (SList*)object_copy((const Object*) self);
 }
 
 SList* slist_set(SList* self, SListNode *sibling, const void *data)
 {
 	return_val_if_fail(IS_SLIST(self), NULL);
-	return (SList*) object_set((Object*) self, sibling, data);
+	return (SList*)object_set((Object*) self, sibling, data);
 }
 
 void slist_get(const SList* self, SListNode *sibling, void *ret)
 {
 	return_if_fail(IS_SLIST(self));
-	object_get((Object*) self, sibling, ret);
+	object_get((const Object*) self, sibling, ret);
 }
 
 SListNode* slist_append(SList *self, const void *data)

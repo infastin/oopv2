@@ -4,9 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Interface.h"
-#include "Messages.h"
-#include "Object.h"
+#include "Base.h"
 
 Type isInterfaceType(Type _itype)
 {

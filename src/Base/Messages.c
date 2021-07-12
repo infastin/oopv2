@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "Messages.h"
-#include "Utils.h"
+#include "Base/Messages.h"
+#include "Utils/Stuff.h"
 
 static const char* message_flag_to_color(MessageFlags flag)
 {

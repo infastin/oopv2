@@ -2,8 +2,9 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <string.h>
 
-#include "Utils.h"
+#include "Utils/Stuff.h"
 
 char* strdup_printf(const char *fmt, ...)
 {

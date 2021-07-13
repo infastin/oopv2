@@ -50,13 +50,13 @@ ssize_t dlist_get_length(const DList *self);
 	   (IS_DLIST(self)) ?                                          \
 	   (stringer_output((const Stringer*) self, str_func, side)) : \
 	   (return_if_fail_warning(STRFUNC, "IS_DLIST("#self")"))      \
-   )
+	)
 
 #define dlist_outputln(self, str_func, side...)                       \
 	(                                                                 \
 	  	(IS_DLIST(self)) ?                                            \
 	  	(stringer_outputln((const Stringer*) self, str_func, side)) : \
-	  	(return_if_fail_warning(STRFUNC, "IS_DLIST("#self")"))        \
-  	)
+		(return_if_fail_warning(STRFUNC, "IS_DLIST("#self")"))        \
+	)
 
 #endif /* end of include guard: DLIST_H_WSFB7UXG */

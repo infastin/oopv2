@@ -5,9 +5,10 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "Iterable/Array.h"
+#include "DataStructs/Array.h"
 #include "Utils/Stuff.h"
 #include "Utils/Sort.h"
+#include "Utils/Search.h"
 
 /* Predefinitions {{{ */
 
@@ -27,51 +28,11 @@ struct _ArrayData
 	bool zero_terminated;
 };
 
+#define BINARY_SEARCH_LEN_THRESHOLD 32
+
 #define arr_mass(s) ((char*) &((ArrayData*) ((s)->data))[1])
 #define arr_cell(s, i) (&((char*) &((ArrayData*) ((s)->data))[1])[(i) * (arr_data(s)->elemsize)])
 #define arr_data(s) ((ArrayData*) ((s)->data))
-#define mass_cell(m, e, i) (&((char*) (m))[(i) * (e)])
-
-/* }}} */
-
-/* Binary Search {{{ */
-
-#define BINARY_SEARCH_LEN_THRESHOLD 32
-
-static bool linear_search(void *mass, const void* target, size_t len, size_t elemsize, CmpFunc cmp_func, size_t *index)
-{
-	for (size_t i = 0; i < len; ++i) 
-	{
-		if (cmp_func(mass_cell(mass, elemsize, i), target) == 0)
-		{
-			*index = i;
-			return true;
-		}
-	}
-
-	return false;
-}
-
-static bool binary_search(void *mass, const void* target, size_t left, size_t right, size_t elemsize, CmpFunc cmp_func, size_t *index)
-{
-	while (left <= right) 
-	{
-		size_t mid = left + ((right - left) >> 1);
-		
-		if (cmp_func(mass_cell(mass, elemsize, mid), target) == 0)
-		{
-			*index = mid;
-			return true;
-		}
-
-		if (cmp_func(mass_cell(mass, elemsize, mid), target) < 0)
-			left = mid + 1;
-		else
-			right = mid - 1;
-	}
-
-	return false;
-}
 
 /* }}} */
 
@@ -195,7 +156,7 @@ static Array* _Array_insert_many(Array *self, size_t index, const void *data, si
 
 static Object* Array_ctor(Object *_self, va_list *ap)
 {
-	Array *self = ARRAY(object_super_ctor(ARRAY_TYPE, _self, ap));
+	Array *self = ARRAY(OBJECT_CLASS(OBJECT_TYPE)->ctor(_self, ap));
 
 	bool clear = (bool) va_arg(*ap, int);
 	bool zero_terminated = (bool) va_arg(*ap, int);
@@ -246,7 +207,7 @@ static Object* Array_dtor(Object *_self, va_list *ap)
 static Object* Array_cpy(const Object *_self, Object *_object)
 {
 	const Array *self = ARRAY(_self);
-	Array *object = (Array*) object_super_cpy(ARRAY_TYPE, _self, _object);
+	Array *object = ARRAY(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object));
 
 	object->data = calloc(1, sizeof(ArrayData) + arr_data(self)->capacity * arr_data(self)->elemsize);
 

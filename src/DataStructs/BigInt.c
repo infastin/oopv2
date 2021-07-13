@@ -6,35 +6,35 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "Base/Messages.h"
-#include "BigInt/BigInt.h"
-#include "Iterable/Array.h"
-#include "Utils/Stuff.h"
+#include "Base.h"
+#include "DataStructs/BigInt.h"
+#include "DataStructs/Array.h"
+#include "Interfaces/StringerInterface.h"
 
 /* Predefinitions {{{ */
+
+typedef unsigned int		word_t;
+typedef unsigned long long	lword_t;
+typedef long long			slword_t;
+
+struct _BigInt
+{
+	Object	parent;
+	size_t	capacity;
+	size_t	length;
+	word_t *words;
+	int		sign;
+};
 
 static void stringer_interface_init(StringerInterface *iface);
 
 DEFINE_TYPE_WITH_IFACES(BigInt, bi, object, 1, 
 		USE_INTERFACE(STRINGER_INTERFACE_TYPE, stringer_interface_init));
 
-#define bi_set_bit(self, bit, val)                                         \
-	{                                                                      \
-		if ((val) == 0)                                                    \
-			(self)->words[(bit) / WORD_BIT] &= ~(1 << ((bit) % WORD_BIT)); \
-		else                                                               \
-		{                                                                  \
-			if (WORDS(bit) > (self)->length)                               \
-				(self)->length = WORDS(bit);                               \
-			(self)->words[(bit) / WORD_BIT] |= 1 << ((bit) % WORD_BIT);    \
-		}                                                                  \
-	}
-
-#define bi_get_bit(self, bit) (BIT((self)->words[(bit) / WORD_BIT], (bit)))
-#define bi_last_bit(self) (((self)->length == 0) ? 0 : bi_get_bit(self, (self)->length - 1))
-
+#define WORD_BIT 32 // Bits per word
+#define WORD_MASK ((1ULL << WORD_BIT) - 1) // Word mask 
+#define WORD_BASE (1ULL << WORD_BIT) // Word base
 #define BI_ZERO ((BigInt*)object_new(BIGINT_TYPE, BI_INIT_INT, 0))
-#define BI_ONE ((BigInt*)object_new(BIGINT_TYPE, BI_INIT_INT, 1))
 
 /* }}} */
 
@@ -81,28 +81,35 @@ static BigInt* _BigInt_add(const BigInt *hi, const BigInt *lo)
 	BigInt *result = (BigInt*)object_new(BIGINT_TYPE, BI_INIT_SIZED, hi->length + 1);
 	return_val_if_fail(result != NULL, NULL);
 
-	lword_t carry = 0;
+	word_t carry = 0;
 	size_t i = 0;
 
 	for (; i < lo->length; ++i) 
 	{
-		lword_t hi_word = hi->words[i];
-		lword_t lo_word = lo->words[i];
+		word_t hi_word = hi->words[i];
+		word_t lo_word = lo->words[i];
 
-		lword_t new_word = hi_word + lo_word + carry;
-		carry = new_word >> WORD_BIT;
+		word_t new_word = hi_word + lo_word + carry;
 
-		result->words[i] = (word_t) new_word;
+		if (hi_word > new_word || lo_word > new_word)
+			carry = 0x1;
+		else
+			carry = 0;
+
+		result->words[i] = new_word;
 	}
 
 	for (; i < hi->length; ++i)
 	{
-		lword_t hi_word = hi->words[i];
-		lword_t new_word = hi_word + carry;
+		word_t hi_word = hi->words[i];
+		word_t new_word = hi_word + carry;
 
-		carry = new_word >> WORD_BIT;
+		if (hi_word > new_word)
+			carry = 0x1;
+		else
+			carry = 0;
 
-		result->words[i] = (word_t) new_word;
+		result->words[i] = new_word;
 	}
 
 	if (carry != 0)
@@ -121,27 +128,35 @@ static BigInt* _BigInt_sub(const BigInt *hi, const BigInt *lo)
 	BigInt *result = (BigInt*)object_new(BIGINT_TYPE, BI_INIT_SIZED, hi->length);
 	return_val_if_fail(result != NULL, NULL);
 
-	slword_t carry = 0;
+	word_t carry = 0;
 	size_t i = 0;
 
 	for (; i < lo->length; ++i)
 	{
-		slword_t hi_word = hi->words[i];
-		slword_t lo_word = lo->words[i];
+		word_t hi_word = hi->words[i];
+		word_t lo_word = lo->words[i];
 
-		slword_t tmp = hi_word - lo_word - carry;
+		word_t new_word = hi_word - lo_word - carry;
 
-		carry = (tmp >> (WORD_BIT + 1)) & 0x1;
-		result->words[i] = (word_t) tmp;
+		if (new_word > hi_word && new_word > lo_word)
+			carry = 0x1;
+		else
+			carry = 0;
+
+		result->words[i] = new_word;
 	}
 
 	for (; i < hi->length; ++i)
 	{
-		slword_t hi_word = hi->words[i];
-		slword_t tmp = hi_word - carry;
+		word_t hi_word = hi->words[i];
+		word_t new_word = hi_word - carry;
 
-		carry = (tmp >> (WORD_BIT + 1)) & 0x1;
-		result->words[i] = (word_t) tmp;
+		if (new_word > hi_word)
+			carry = 0x1;
+		else
+			carry = 0;
+
+		result->words[i] = new_word;
 	}
 
 	result->length = hi->length;
@@ -151,8 +166,8 @@ static BigInt* _BigInt_sub(const BigInt *hi, const BigInt *lo)
 
 static int _BigInt_divmnu(word_t *q, word_t *r, word_t *u, word_t *v, size_t m, size_t n)
 {
-	lword_t b = 1UL << WORD_BIT; // Number base
-	lword_t mask = (1UL << WORD_BIT) - 1; // Number mask b - 1
+	lword_t b = WORD_BASE; // Number base
+	lword_t mask = WORD_MASK; // Number mask b - 1
 
 	word_t *un, *vn; // Normalized form of u, v
 	lword_t qhat; // Estimated quotient digit
@@ -164,13 +179,13 @@ static int _BigInt_divmnu(word_t *q, word_t *r, word_t *u, word_t *v, size_t m, 
 	if (n == 1)
 	{
 		k = 0;
-		
+
 		for (size_t j = m - 1; j >= 0; --j)
 		{
 			q[j] = (k * b + u[j]) / v[0];
 			k = (k * b + u[j]) - (q[j] * v[0]);
 		}
-		
+
 		r[0] = k;
 
 		return 0;
@@ -205,8 +220,9 @@ static int _BigInt_divmnu(word_t *q, word_t *r, word_t *u, word_t *v, size_t m, 
 
 	un[0] = (u[0] << s) & mask;
 
-	for (size_t j = m - n; j >= 0; --j)
+	for (size_t j = m - n; j >= 0; --j) // Main loop
 	{
+		// Compute estimate qhat of q[j]
 		qhat = ((un[j + n] * b) + un[j + n - 1]) / (vn[n - 1]);
 		rhat = ((un[j + n] * b) + un[j + n - 1]) % vn[n - 1];
 
@@ -223,7 +239,8 @@ static int _BigInt_divmnu(word_t *q, word_t *r, word_t *u, word_t *v, size_t m, 
 
 			break;
 		}
-	
+
+		// Multiply and subtract
 		k = 0;
 		for (size_t i = 0; i < n; ++i)
 		{
@@ -236,11 +253,11 @@ static int _BigInt_divmnu(word_t *q, word_t *r, word_t *u, word_t *v, size_t m, 
 		t = un[j + n] - k;
 		un[j + n] = t;
 
-		q[j] = qhat;
+		q[j] = qhat; // Store quotient digit
 
-		if (t < 0)
+		if (t < 0) // If we subtracted too
 		{
-			q[j] -= 1;
+			q[j] -= 1; // ...much, add back
 			k = 0;
 
 			for (size_t i = 0; i < n; ++i)
@@ -268,7 +285,7 @@ static int _BigInt_divmnu(word_t *q, word_t *r, word_t *u, word_t *v, size_t m, 
 	return 0;
 }
 
-static int _BigInt_divrem2in1(word_t *u, size_t m, word_t v, word_t *q)
+static word_t _BigInt_divrem2in1(word_t *u, size_t m, word_t v, word_t *q)
 {
 	lword_t k = 0;
 	lword_t t;
@@ -291,7 +308,7 @@ static int _BigInt_divrem2in1(word_t *u, size_t m, word_t v, word_t *q)
 			break;
 	}
 
-	return k;
+	return (word_t) k;
 }
 
 static void BigInt_divrem_int(const BigInt *dividend, int divisor, BigInt **ret_quot, BigInt **ret_rem);
@@ -338,7 +355,7 @@ static BigInt* BigInt_mul_int(const BigInt *a, int b);
 
 static Object* BigInt_ctor(Object *_self, va_list *ap)
 {
-	BigInt *self = BIGINT(object_super_ctor(BIGINT_TYPE, _self, ap));
+	BigInt *self = BIGINT(OBJECT_CLASS(OBJECT_TYPE)->ctor(_self, ap));
 
 	BigIntInitType type = va_arg(*ap, BigIntInitType);
 
@@ -371,7 +388,7 @@ static Object* BigInt_ctor(Object *_self, va_list *ap)
 	if (type == BI_INIT_INT)
 	{
 		int numb = va_arg(*ap, int);
-		
+
 		if (numb != 0)
 		{
 			self->words[0] = numb;
@@ -442,7 +459,7 @@ static Object* BigInt_ctor(Object *_self, va_list *ap)
 static Object* BigInt_dtor(Object *_self, va_list *ap)
 {
 	BigInt *self = BIGINT(_self);
-	
+
 	if (self->words)
 		free(self->words);
 
@@ -452,7 +469,7 @@ static Object* BigInt_dtor(Object *_self, va_list *ap)
 static Object* BigInt_cpy(const Object *_self, Object *_object)
 {
 	const BigInt *self = BIGINT(_self);
-	BigInt *object = (BigInt*) object_super_cpy(BIGINT_TYPE, _self, _object);
+	BigInt *object = BIGINT(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object));
 
 	object->capacity = self->capacity;
 	object->length = self->length;
@@ -597,7 +614,7 @@ static int BigInt_cmp(const BigInt *a, const BigInt *b)
 	{
 		if (a->words[i] > b->words[i])
 			return 1;
-		
+
 		if (a->words[i] < b->words[i])
 			return -1;
 
@@ -796,7 +813,7 @@ static BigInt* BigInt_lshift(BigInt *self, size_t shift)
 	size_t sh = WORD_BIT - lshift;
 	size_t i = wlshift;
 
-	lword_t mask = (1UL << lshift) - 1;
+	lword_t mask = (1ULL << lshift) - 1;
 	lword_t r = 0;
 
 	for (; i < self->length; ++i)
@@ -804,7 +821,7 @@ static BigInt* BigInt_lshift(BigInt *self, size_t shift)
 		lword_t self_word = self->words[i]; 
 		lword_t rr = (self_word >> sh) & mask;
 		lword_t new_word = (self_word << lshift) | r;
-		
+
 		self->words[i] = (word_t) new_word;
 		r = rr;
 	}
@@ -845,7 +862,7 @@ static BigInt* BigInt_rshift(BigInt *self, size_t shift)
 	size_t sh = WORD_BIT - rshift;
 	size_t i = self->length - wrshift - 1;
 
-	lword_t mask = (1UL << rshift) - 1;
+	lword_t mask = (1ULL << rshift) - 1;
 	lword_t r = 0;
 
 	for (; i >= 0; --i) 
@@ -853,7 +870,7 @@ static BigInt* BigInt_rshift(BigInt *self, size_t shift)
 		lword_t self_word = self->words[i];
 		lword_t rr = self_word & mask;
 		lword_t new_word = (self_word >> rshift) | (r << sh);
-		
+
 		self->words[i] = (word_t) new_word;
 		r = rr;
 	}
@@ -908,7 +925,7 @@ static BigInt* BigInt_mul(const BigInt *a, const BigInt *b)
 			lword_t lo_word = lo->words[j];
 
 			lword_t new_word = result_word + (hi_word * lo_word) + carry;
-			
+
 			carry = new_word >> WORD_BIT;
 			result->words[i + j] = (word_t) new_word;
 		}
@@ -1126,7 +1143,7 @@ static void BigInt_divrem_int(const BigInt *dividend, int divisor, BigInt **ret_
 	}
 
 	int dsign = (divisor < 0) ? 1 : 0;
-	
+
 	if (dsign) 
 		divisor *= -1;
 
@@ -1173,7 +1190,7 @@ static void BigInt_divrem_int(const BigInt *dividend, int divisor, BigInt **ret_
 		object_delete((Object*) quot);
 		return_if_fail(rem != NULL);
 	}
-	
+
 	quot->length = m;
 	rem->length = 1;
 
@@ -1261,126 +1278,78 @@ void bi_delete(BigInt *self)
 BigInt* bi_lshift(BigInt *self, size_t shift)
 {
 	return_val_if_fail(IS_BIGINT(self), NULL);
-
-	BigIntClass *klass = BIGINT_GET_CLASS(self);
-
-	return_val_if_fail(klass->lshift != NULL, NULL);
-	return klass->lshift(self, shift);
+	return BigInt_lshift(self, shift);
 }
 
 BigInt* bi_rshift(BigInt *self, size_t shift)
 {
 	return_val_if_fail(IS_BIGINT(self), NULL);
-
-	BigIntClass *klass = BIGINT_GET_CLASS(self);
-
-	return_val_if_fail(klass->rshift != NULL, NULL);
-	return klass->rshift(self, shift);
+	return BigInt_rshift(self, shift);
 }
 
 int bi_cmp(const BigInt *a, const BigInt *b)
 {
 	return_val_if_fail(IS_BIGINT(a), -2);
 	return_val_if_fail(IS_BIGINT(b), -2);
-
-	BigIntClass *klass = BIGINT_GET_CLASS(a);
-
-	return_val_if_fail(klass->cmp != NULL, -2);
-	return klass->cmp(a, b);
+	return BigInt_cmp(a, b);
 }
 
 int bi_cmp_int(const BigInt *a, int b)
 {
 	return_val_if_fail(IS_BIGINT(a), -2);
-
-	BigIntClass *klass = BIGINT_GET_CLASS(a);
-
-	return_val_if_fail(klass->cmp_int != NULL, -2);
-	return klass->cmp_int(a, b);
+	return BigInt_cmp_int(a, b);
 }
 
 BigInt* bi_add(const BigInt *a, const BigInt *b)
 {
 	return_val_if_fail(IS_BIGINT(a), NULL);
 	return_val_if_fail(IS_BIGINT(b), NULL);
-
-	BigIntClass *klass = BIGINT_GET_CLASS(a);
-
-	return_val_if_fail(klass->add != NULL, NULL);
-	return klass->add(a, b);
+	return BigInt_add(a, b);
 }
 
 BigInt* bi_add_int(const BigInt *a, int b)
 {
 	return_val_if_fail(IS_BIGINT(a), NULL);
-
-	BigIntClass *klass = BIGINT_GET_CLASS(a);
-
-	return_val_if_fail(klass->add_int != NULL, NULL);
-	return klass->add_int(a, b);
+	return BigInt_add_int(a, b);
 }
 
 BigInt* bi_sub(const BigInt *a, const BigInt *b)
 {
 	return_val_if_fail(IS_BIGINT(a), NULL);
 	return_val_if_fail(IS_BIGINT(b), NULL);
-
-	BigIntClass *klass = BIGINT_GET_CLASS(a);
-
-	return_val_if_fail(klass->sub != NULL, NULL);
-	return klass->sub(a, b);
+	return BigInt_sub(a, b);
 }
 
 BigInt* bi_sub_int(const BigInt *a, int b)
 {
 	return_val_if_fail(IS_BIGINT(a), NULL);
-
-	BigIntClass *klass = BIGINT_GET_CLASS(a);
-
-	return_val_if_fail(klass->sub_int != NULL, NULL);
-	return klass->sub_int(a, b);
+	return BigInt_sub_int(a, b);
 }
 
 BigInt* bi_mul(const BigInt *a, const BigInt *b)
 {
 	return_val_if_fail(IS_BIGINT(a), NULL);
 	return_val_if_fail(IS_BIGINT(b), NULL);
-
-	BigIntClass *klass = BIGINT_GET_CLASS(a);
-
-	return_val_if_fail(klass->mul != NULL, NULL);
-	return klass->mul(a, b);
+	return BigInt_mul(a, b);
 }
 
 BigInt* bi_mul_int(const BigInt *a, int b)
 {
 	return_val_if_fail(IS_BIGINT(a), NULL);
-
-	BigIntClass *klass = BIGINT_GET_CLASS(a);
-
-	return_val_if_fail(klass->mul_int != NULL, NULL);
-	return klass->mul_int(a, b);
+	return BigInt_mul_int(a, b);
 }
 
 void bi_divrem(const BigInt *dividend, const BigInt *divisor, BigInt **quot, BigInt **rem)
 {
 	return_if_fail(IS_BIGINT(dividend));
 	return_if_fail(IS_BIGINT(divisor));
-
-	BigIntClass *klass = BIGINT_GET_CLASS(dividend);
-
-	return_if_fail(klass->divrem != NULL);
-	klass->divrem(dividend, divisor, quot, rem);
+	BigInt_divrem(dividend, divisor, quot, rem);
 }
 
 void bi_divrem_int(const BigInt *dividend, int divisor, BigInt **quot, BigInt **rem)
 {
 	return_if_fail(IS_BIGINT(dividend));
-
-	BigIntClass *klass = BIGINT_GET_CLASS(dividend);
-
-	return_if_fail(klass->divrem_int != NULL);
-	klass->divrem_int(dividend, divisor, quot, rem);
+	BigInt_divrem_int(dividend, divisor, quot, rem);
 }
 
 BigInt* bi_div(const BigInt *dividend, const BigInt *divisor)
@@ -1388,13 +1357,9 @@ BigInt* bi_div(const BigInt *dividend, const BigInt *divisor)
 	return_val_if_fail(IS_BIGINT(dividend), NULL);
 	return_val_if_fail(IS_BIGINT(divisor), NULL);
 
-	BigIntClass *klass = BIGINT_GET_CLASS(dividend);
-
-	return_val_if_fail(klass->divrem != NULL, NULL);
-
 	BigInt *quot = NULL; 
 
-	klass->divrem(dividend, divisor, &quot, NULL);
+	BigInt_divrem(dividend, divisor, &quot, NULL);
 	return_val_if_fail(quot != NULL, NULL);
 
 	return quot;
@@ -1404,13 +1369,9 @@ BigInt* bi_div_int(const BigInt *dividend, int divisor)
 {
 	return_val_if_fail(IS_BIGINT(dividend), NULL);
 
-	BigIntClass *klass = BIGINT_GET_CLASS(dividend);
-
-	return_val_if_fail(klass->divrem_int != NULL, NULL);
-
 	BigInt *quot = NULL; 
 
-	klass->divrem_int(dividend, divisor, &quot, NULL);
+	BigInt_divrem_int(dividend, divisor, &quot, NULL);
 	return_val_if_fail(quot != NULL, NULL);
 
 	return quot;
@@ -1421,15 +1382,11 @@ BigInt* bi_mod(const BigInt *dividend, const BigInt *divisor)
 	return_val_if_fail(IS_BIGINT(dividend), NULL);
 	return_val_if_fail(IS_BIGINT(divisor), NULL);
 
-	BigIntClass *klass = BIGINT_GET_CLASS(dividend);
-
-	return_val_if_fail(klass->divrem != NULL, NULL);
-
 	BigInt *rem = NULL;
 
-	klass->divrem(dividend, divisor, NULL, &rem);
+	BigInt_divrem(dividend, divisor, NULL, &rem);
 	return_val_if_fail(rem != NULL, NULL);
-	
+
 	return rem;
 }
 
@@ -1437,13 +1394,9 @@ BigInt* bi_mod_int(const BigInt *dividend, int divisor)
 {
 	return_val_if_fail(IS_BIGINT(dividend), NULL);
 
-	BigIntClass *klass = BIGINT_GET_CLASS(dividend);
-
-	return_val_if_fail(klass->divrem_int != NULL, NULL);
-
 	BigInt *rem = NULL; 
 
-	klass->divrem_int(dividend, divisor, NULL, &rem);
+	BigInt_divrem_int(dividend, divisor, NULL, &rem);
 	return_val_if_fail(rem != NULL, NULL);
 
 	return rem;
@@ -1477,19 +1430,6 @@ static void bi_class_init(BigIntClass *klass)
 	OBJECT_CLASS(klass)->cpy = BigInt_cpy;
 	OBJECT_CLASS(klass)->set = BigInt_set;
 	OBJECT_CLASS(klass)->get = BigInt_get;
-
-	klass->cmp = BigInt_cmp;
-	klass->cmp_int = BigInt_cmp_int;
-	klass->lshift = BigInt_lshift;
-	klass->rshift = BigInt_rshift;
-	klass->add = BigInt_add;
-	klass->add_int = BigInt_add_int;
-	klass->sub = BigInt_sub;
-	klass->sub_int = BigInt_sub_int;
-	klass->mul = BigInt_mul;
-	klass->mul_int = BigInt_mul_int;
-	klass->divrem = BigInt_divrem;
-	klass->divrem_int = BigInt_divrem_int;
 }
 
 /* }}} */

@@ -15,9 +15,9 @@ if (MSVC)
 	add_compile_options(/O2 /J /Wall /std:c11 /GS)	
 else()
 	add_compile_options(-g -O2 -pipe 
-						-D_FORTIFY_SOURCE=2 
-						-Werror=implicit-function-declaration -Wall
-						-funsigned-char -std=c11 -fms-extensions)
+		-D_FORTIFY_SOURCE=2 
+		-Werror=implicit-function-declaration -Wall
+		-funsigned-char -std=c11 -fms-extensions)
 endif()
 
 set(INCLUDE_DIR include)
@@ -33,29 +33,26 @@ add_library(base STATIC
 	${SRC_DIR}/Base/Messages.c
 )
 
-add_library(iterable STATIC
-	${SRC_DIR}/Iterable/Array.c
-	${SRC_DIR}/Iterable/SList.c
-	${SRC_DIR}/Iterable/DList.c
+add_library(ds STATIC
+	${SRC_DIR}/DataStructs/Array.c
+	${SRC_DIR}/DataStructs/SList.c
+	${SRC_DIR}/DataStructs/DList.c
+	${SRC_DIR}/DataStructs/BigInt.c
 )
 
 add_library(utils STATIC
 	${SRC_DIR}/Utils/Stuff.c
 	${SRC_DIR}/Utils/Sort.c
+	${SRC_DIR}/Utils/Search.c
 )
 
 add_library(interfaces STATIC
 	${SRC_DIR}/Interfaces/StringerInterface.c
 )
 
-add_library(bigint STATIC
-	${SRC_DIR}/BigInt/BigInt.c
-)
-
 target_link_libraries(base utils)
-target_link_libraries(iterable base interfaces)
+target_link_libraries(ds base interfaces)
 target_link_libraries(interfaces base)
-target_link_libraries(bigint base interfaces iterable)
 
 set(EXECUTABLES
 	main
@@ -63,10 +60,9 @@ set(EXECUTABLES
 
 set(LIBRARIES
 	base
-	iterable
+	ds
 	utils
 	interfaces
-	bigint
 )
 
 foreach(LIB IN LISTS LIBRARIES)

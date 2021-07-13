@@ -6,6 +6,18 @@
 
 #include "Base.h"
 
+typedef struct
+{
+	const Object _;
+	const char *name;
+	const ObjectClass *super;
+	Interface **ifaces;
+	size_t ifaces_count;
+	size_t size;
+} ObjectClassData;
+
+#define oc_data(s) ((ObjectClassData*) (s)->private)
+
 Type isInterfaceType(Type _itype)
 {
 	if (_itype == 0)
@@ -111,9 +123,9 @@ Interface* interface_copy(Interface *iface)
 bool hasInterface(Type itype, const void *self)
 {
 	const ObjectClass *klass = OBJECT_GET_CLASS(self);
-	return_val_if_fail(klass->ifaces != NULL && klass->ifaces_count != 0, false);
+	return_val_if_fail(oc_data(klass)->ifaces != NULL && oc_data(klass)->ifaces_count != 0, false);
 
-	void *result = interface_find(itype, klass->ifaces, klass->ifaces_count);
+	void *result = interface_find(itype, oc_data(klass)->ifaces, oc_data(klass)->ifaces_count);
 	return_val_if_fail(result != NULL, false);
 
 	return true;
@@ -122,9 +134,9 @@ bool hasInterface(Type itype, const void *self)
 void* interface_cast(Type itype, const void *self)
 {
 	const ObjectClass *klass = OBJECT_GET_CLASS(self);
-	exit_if_fail(klass->ifaces != NULL && klass->ifaces_count != 0)
+	exit_if_fail(oc_data(klass)->ifaces != NULL && oc_data(klass)->ifaces_count != 0);
 
-	void *result = interface_find(itype, klass->ifaces, klass->ifaces_count);
+	void *result = interface_find(itype, oc_data(klass)->ifaces, oc_data(klass)->ifaces_count);
 	exit_if_fail(result != NULL);
 
 	return result;
@@ -168,7 +180,7 @@ Type interface_type_new(char *name, size_t size, size_t itypes_count, ...)
 	if (itypes_count != 0)
 	{
 		itype->itypes = (InterfaceType**)calloc(itypes_count, sizeof(InterfaceType*));
-		
+
 		if (itype->itypes == NULL)
 		{
 			msg_critical("couldn't allocate memory for interface types of type '%s'!", name);
@@ -199,7 +211,7 @@ Interface* interface_new(Type interface_type, void (*main_init)(Interface *iface
 	exit_if_fail(itype->size != 0);
 
 	Interface *iface = (Interface*)calloc(1, itype->size);
-	
+
 	if (iface == NULL)
 	{
 		msg_critical("couldn't allocate memory for interface of type '%s'!", itype->name);

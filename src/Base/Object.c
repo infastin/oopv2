@@ -10,7 +10,30 @@
 
 #include "Base.h"
 
-/* Type checking and sizeOf {{{1 */
+/* Predefinitions {{{ */
+
+typedef struct
+{
+	unsigned int magic;
+	const ObjectClass *klass;
+} ObjectData;
+
+typedef struct
+{
+	const Object _;
+	const char *name;
+	const ObjectClass *super;
+	Interface **ifaces;
+	size_t ifaces_count;
+	size_t size;
+} ObjectClassData;
+
+#define o_data(s) ((ObjectData*) (s)->private)
+#define oc_data(s) ((ObjectClassData*) (s)->private)
+
+/* }}} */
+
+/* Type checking, sizeOf, className {{{ */
 
 const void* isObject(const void *_self)
 {
@@ -22,7 +45,7 @@ const void* isObject(const void *_self)
 
 	const Object* self = _self;
 
-	if (self->magic != MAGIC_NUM)
+	if (o_data(self)->magic != MAGIC_NUM)
 	{
 		msg_warn("object isn't object!");
 		return NULL;
@@ -35,24 +58,24 @@ void* cast(Type _object_type, const void *_self)
 {
 	const Object *object_type = isObject((const Object*) _object_type);
 	exit_if_fail(object_type != NULL);
-	
+
 	const Object *self = isObject(_self);
 	exit_if_fail(self != NULL);
 
 	if (_object_type != OBJECT_TYPE)
 	{
-		const ObjectClass *p = self->klass;
+		const ObjectClass *p = o_data(self)->klass;
 		const ObjectClass *class = (const ObjectClass*) object_type;
 
 		while (p != class) 
 		{
 			if ((Type) p == OBJECT_TYPE)
 			{
-				msg_critical("object can't be casted to '%s'!", class->name);
+				msg_critical("object can't be casted to '%s'!", oc_data(class)->name);
 				exit(EXIT_FAILURE);
 			}
 
-			p = p->super;
+			p = oc_data(p)->super;
 		}
 	}
 
@@ -71,7 +94,7 @@ bool isOf(const void *_self, Type _object_type)
 
 		if (_object_type != OBJECT_TYPE)
 		{
-			const ObjectClass *p = self->klass;
+			const ObjectClass *p = o_data(self)->klass;
 			const ObjectClass *class = (const ObjectClass*) object_type;
 
 			while (p != class) 
@@ -79,7 +102,7 @@ bool isOf(const void *_self, Type _object_type)
 				if ((Type) p == OBJECT_TYPE)
 					return 0;
 
-				p = p->super;
+				p = oc_data(p)->super;
 			}
 		}
 
@@ -91,12 +114,17 @@ bool isOf(const void *_self, Type _object_type)
 
 const void* classOf(const void *self)
 {
-	return OBJECT(self)->klass;
+	return o_data(OBJECT(self))->klass;
 }
 
 size_t sizeOf(const void *self)
 {
-	return OBJECT_GET_CLASS(self)->size;
+	return oc_data(OBJECT_GET_CLASS(self))->size;
+}
+
+const char* className(const void *self)
+{
+	return oc_data(OBJECT_GET_CLASS(self))->name;
 }
 
 /* }}} */
@@ -129,18 +157,20 @@ static Object* object_class_ctor(Object *_self, va_list *ap)
 {
 	ObjectClass *self = OBJECT_CLASS(_self);
 
-	self->name = va_arg(*ap, char*);
-	self->super = va_arg(*ap, ObjectClass*);
+	ObjectClassData *private = (ObjectClassData*) self->private;
 
-	exit_if_fail(self->super != NULL);
-	exit_if_fail(IS_OBJECT_CLASS(self->super));
+	private->name = va_arg(*ap, char*);
+	private->super = va_arg(*ap, ObjectClass*);
 
-	self->size = va_arg(*ap, size_t);
+	exit_if_fail(private->super != NULL);
+	exit_if_fail(IS_OBJECT_CLASS(private->super));
+
+	private->size = va_arg(*ap, size_t);
 
 	const size_t offset = offsetof(ObjectClass, ctor);
 	memcpy((char*) self + offset, 
-			(char*) self->super + offset, 
-			OBJECT_SIZE(self->super) - offset);
+			(char*) private->super + offset, 
+			OBJECT_SIZE(private->super) - offset);
 
 	typedef void (*init_class)(ObjectClass* klass);
 
@@ -150,43 +180,43 @@ static Object* object_class_ctor(Object *_self, va_list *ap)
 		ic(self);
 
 	size_t ifaces_count = va_arg(*ap, size_t);
-	self->ifaces_count = self->super->ifaces_count + ifaces_count;
-	self->ifaces = NULL;
+	private->ifaces_count = oc_data(private->super)->ifaces_count + ifaces_count;
+	private->ifaces = NULL;
 
-	if (self->ifaces_count != 0)
+	if (private->ifaces_count != 0)
 	{
 		typedef void (*init_interface)(Interface* iface);
 
-		self->ifaces = (Interface**)calloc(sizeof(Interface*), self->ifaces_count);
+		private->ifaces = (Interface**)calloc(sizeof(Interface*), private->ifaces_count);
 
-		if (self->ifaces == NULL)
+		if (private->ifaces == NULL)
 		{
 			msg_critical("couldn't allocate memory for interfaces!");
 			exit(EXIT_FAILURE);
 		}
 
-		if (self->super->ifaces != NULL && self->super->ifaces_count != 0)
+		if (oc_data(private->super)->ifaces != NULL && oc_data(private->super)->ifaces_count != 0)
 		{
-			for (int i = 0; i < self->super->ifaces_count; ++i) 
+			for (int i = 0; i < oc_data(private->super)->ifaces_count; ++i) 
 			{
-				self->ifaces[i] = interface_copy(self->super->ifaces[i]);
+				private->ifaces[i] = interface_copy(oc_data(private->super)->ifaces[i]);
 			}
 		}
 
 		Type itype = va_arg(*ap, Type);
 
-		for (int j = self->super->ifaces_count; itype != 0; itype = va_arg(*ap, Type)) 
+		for (int j = oc_data(private->super)->ifaces_count; itype != 0; itype = va_arg(*ap, Type)) 
 		{
 			init_interface ii = va_arg(*ap, init_interface);
 			Interface *find;
 
-			if ((find = interface_find(itype, self->ifaces, j)) != NULL)
+			if ((find = interface_find(itype, private->ifaces, j)) != NULL)
 				find->init = ii;
 			else
-				self->ifaces[j++] = interface_new(itype, ii);
+				private->ifaces[j++] = interface_new(itype, ii);
 		}
 
-		interface_init_all(self->ifaces, self->ifaces_count);
+		interface_init_all(private->ifaces, private->ifaces_count);
 	}
 
 	return _self;
@@ -195,16 +225,16 @@ static Object* object_class_ctor(Object *_self, va_list *ap)
 static Object* object_class_dtor(Object *_self, va_list *ap)
 {
 	ObjectClass *self = OBJECT_CLASS(_self);
-	msg_info("can't destroy class '%s'!", self->name);
-	
+	msg_info("can't destroy class '%s'!", oc_data(self)->name);
+
 	return _self;
 }
 
 static Object* object_class_cpy(const Object *_self, Object *object)
 {
 	const ObjectClass *self = OBJECT_CLASS(_self);
-	msg_info("can't copy class '%s'!", self->name);
-	
+	msg_info("can't copy class '%s'!", oc_data(self)->name);
+
 	return object;
 }
 
@@ -216,8 +246,10 @@ static const ObjectClass __Object;
 static const ObjectClass __ObjectClass;
 
 static const ObjectClass __Object = {
-	{ MAGIC_NUM, &__ObjectClass },
-	"Object", &__Object, sizeof(Object), 0, NULL,
+	{
+		(void*) MAGIC_NUM, (void*) &__ObjectClass,
+		(void*) "Object", (void*) &__Object, (void*) NULL, (void*) 0, (void*) sizeof(Object)
+	},
 	object_ctor,
 	object_dtor,
 	object_cpy,
@@ -226,8 +258,10 @@ static const ObjectClass __Object = {
 };
 
 static const ObjectClass __ObjectClass = {
-	{ MAGIC_NUM, &__ObjectClass },
-	"ObjectClass", &__Object, sizeof(ObjectClass), 0, NULL,
+	{
+		(void*) MAGIC_NUM, (void*) &__ObjectClass,
+		(void*) "ObjectClass", (void*) &__Object, (void*) NULL, (void*) 0, (void*) sizeof(ObjectClass)
+	},
 	object_class_ctor,
 	object_class_dtor,
 	object_class_cpy,
@@ -285,18 +319,18 @@ Object* object_new(Type object_type, ...)
 	return_val_if_fail(IS_OBJECT_CLASS(object_type), NULL);
 
 	const ObjectClass *class = OBJECT_CLASS(object_type);
-	exit_if_fail(class->size != 0);
+	exit_if_fail(oc_data(class)->size != 0);
 
-	Object *object = (Object*)calloc(1, class->size);
+	Object *object = (Object*)calloc(1, oc_data(class)->size);
 
 	if (object == NULL)
 	{
-		msg_error("couldn't allocate memory for object of type '%s'!", class->name);
+		msg_error("couldn't allocate memory for object of type '%s'!", oc_data(class)->name);
 		return NULL;
 	}
 
-	object->magic = MAGIC_NUM;
-	object->klass = class;
+	o_data(object)->magic = MAGIC_NUM;
+	o_data(object)->klass = class;
 
 	va_list ap;
 	va_start(ap, object_type);
@@ -304,7 +338,7 @@ Object* object_new(Type object_type, ...)
 	va_end(ap);
 
 	if (object == NULL)
-		msg_error("couldn't create object of type '%s'!", class->name);
+		msg_error("couldn't create object of type '%s'!", oc_data(class)->name);
 
 	return object;
 }
@@ -315,12 +349,12 @@ Object* object_new_stack(Type object_type, void *_object, ...)
 	return_val_if_fail(_object != NULL, NULL);
 
 	const ObjectClass *class = OBJECT_CLASS(object_type);
-	exit_if_fail(class->size != 0);
+	exit_if_fail(oc_data(class)->size != 0);
 
 	Object *object = (Object*) _object;
 
-	object->magic = MAGIC_NUM;
-	object->klass = class;
+	o_data(object)->magic = MAGIC_NUM;
+	o_data(object)->klass = class;
 
 	va_list ap;
 	va_start(ap, _object);
@@ -328,7 +362,7 @@ Object* object_new_stack(Type object_type, void *_object, ...)
 	va_end(ap);
 
 	if (object == NULL)
-		msg_error("couldn't create object of type '%s'!", class->name);
+		msg_error("couldn't create object of type '%s'!", oc_data(class)->name);
 
 	return object;
 }
@@ -347,25 +381,25 @@ Object* object_copy(const Object *self)
 	return_val_if_fail(IS_OBJECT(self), NULL);
 
 	const ObjectClass *class = OBJECT_GET_CLASS(self);
-	exit_if_fail(class->size != 0);
+	exit_if_fail(oc_data(class)->size != 0);
 
-	Object *object = (Object*)calloc(1, class->size);
+	Object *object = (Object*)calloc(1, oc_data(class)->size);
 
 	if (object == NULL)
 	{
 		msg_error("couldn't allocate memory for copy of object of type '%s'!",
-				class->name);
+				oc_data(class)->name);
 		return NULL;
 	}
 
-	object->magic = MAGIC_NUM;
-	object->klass = class;
+	o_data(object)->magic = MAGIC_NUM;
+	o_data(object)->klass = class;
 
 	object = cpy(self, object);
 
 	if (object == NULL)
 		msg_error("couldn't create copy of object of type '%s'!",
-				class->name);
+				oc_data(class)->name);
 
 	return object;
 }
@@ -396,44 +430,6 @@ void object_get(const Object *self, ...)
 	va_start(ap, self);
 	class->get(self, &ap);
 	va_end(ap);
-}
-
-const ObjectClass* object_super(const ObjectClass *self)
-{
-	return_val_if_fail(IS_OBJECT_CLASS(self), NULL);
-	exit_if_fail(self->super != NULL);
-
-	return self->super;
-}
-
-Object* object_super_ctor(Type object_type, Object *self, va_list *ap)
-{
-	const ObjectClass *superclass = object_super((const ObjectClass*) object_type);
-	
-	return_val_if_fail(superclass != NULL, NULL);
-	exit_if_fail(superclass->ctor != NULL);
-
-	return superclass->ctor(self, ap);
-}
-
-Object* object_super_dtor(Type object_type, Object *self, va_list *ap)
-{
-	const ObjectClass *superclass = object_super((const ObjectClass*) object_type);
-	
-	return_val_if_fail(superclass != NULL, NULL);
-	exit_if_fail(superclass->dtor != NULL);
-
-	return superclass->dtor(self, ap);
-}
-
-Object* object_super_cpy(Type object_type, const Object *self, Object *object)
-{
-	const ObjectClass *superclass = object_super((const ObjectClass*) object_type);
-	
-	return_val_if_fail(superclass != NULL, NULL);
-	exit_if_fail(superclass->cpy != NULL);
-
-	return superclass->cpy(self, object);
 }
 
 /* }}} */

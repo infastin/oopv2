@@ -13,10 +13,9 @@ int main(int argc, char *argv[])
 	unsigned int a = UINT_MAX;
 	unsigned int b = UINT_MAX;
 
-	BigInt *bi1 = bi_new_str("12340000000000000");
-	BigInt *bi2 = bi_new_str("10000000000000000");
+	BigInt *bi1 = bi_new_str("-123406489791");
+	BigInt *bi2 = bi_new_str("-10");
 
-	BigInt *mul = bi_sub(bi1, bi2);
-
+	BigInt *mul = bi_mul(bi1, bi2);
 	bi_outputln(mul);
 }

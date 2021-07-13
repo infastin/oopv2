@@ -229,7 +229,7 @@ static Object* Array_dtor(Object *_self, va_list *ap)
 {
 	Array *self = ARRAY(_self);
 
-	bool free_segment = (bool) va_arg(*ap, int);
+	bool free_segment = (bool)va_arg(*ap, int);
 
 	if (self->data != NULL)
 	{
@@ -526,7 +526,9 @@ static void* Array_steal(Array *self, size_t *len)
 	return_val_if_fail(ret != NULL, NULL);
 
 	memcpy(ret, arr_mass(self), self->len * arr_data(self)->elemsize);
-	*len = self->len;
+	
+	if (len != NULL)
+		*len = self->len;
 
 	self->len = 0;
 	memset(arr_mass(self), 0, self->len * arr_data(self)->elemsize);

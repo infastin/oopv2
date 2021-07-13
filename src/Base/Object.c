@@ -216,7 +216,7 @@ static const ObjectClass __Object;
 static const ObjectClass __ObjectClass;
 
 static const ObjectClass __Object = {
-	{ MAGIC_NUM, 1, &__ObjectClass },
+	{ MAGIC_NUM, &__ObjectClass },
 	"Object", &__Object, sizeof(Object), 0, NULL,
 	object_ctor,
 	object_dtor,
@@ -226,7 +226,7 @@ static const ObjectClass __Object = {
 };
 
 static const ObjectClass __ObjectClass = {
-	{ MAGIC_NUM, 1, &__ObjectClass },
+	{ MAGIC_NUM, &__ObjectClass },
 	"ObjectClass", &__Object, sizeof(ObjectClass), 0, NULL,
 	object_class_ctor,
 	object_class_dtor,
@@ -297,7 +297,6 @@ Object* object_new(Type object_type, ...)
 
 	object->magic = MAGIC_NUM;
 	object->klass = class;
-	object->ref_count = 1;
 
 	va_list ap;
 	va_start(ap, object_type);
@@ -322,7 +321,6 @@ Object* object_new_stack(Type object_type, void *_object, ...)
 
 	object->magic = MAGIC_NUM;
 	object->klass = class;
-	object->ref_count = 1;
 
 	va_list ap;
 	va_start(ap, _object);
@@ -362,7 +360,6 @@ Object* object_copy(const Object *self)
 
 	object->magic = MAGIC_NUM;
 	object->klass = class;
-	object->ref_count = self->ref_count;
 
 	object = cpy(self, object);
 

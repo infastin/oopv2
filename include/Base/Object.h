@@ -109,7 +109,6 @@ typedef struct _ObjectClass ObjectClass;
 struct _Object
 {
 	unsigned int magic;
-	unsigned int ref_count;
 	const ObjectClass *klass;
 };
 

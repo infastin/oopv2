@@ -55,7 +55,7 @@ add_library(bigint STATIC
 target_link_libraries(base utils)
 target_link_libraries(iterable base interfaces)
 target_link_libraries(interfaces base)
-target_link_libraries(bigint base interfaces)
+target_link_libraries(bigint base interfaces iterable)
 
 set(EXECUTABLES
 	main

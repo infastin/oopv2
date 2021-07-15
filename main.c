@@ -108,7 +108,7 @@ void test3()
 
 	clock_t start = clock();
 
-	for (int i = 0; i < 10; ++i) 
+	for (int i = 0; i < 100; ++i) 
 	{
 		tree_insert(t, GET_PTR(int, rand() % 100), GET_PTR(int, rand()), 4, 4);
 	}
@@ -118,6 +118,15 @@ void test3()
 	clock_t end = clock();
 
 	printf("%ld\n", (end - start) / CLOCKS_PER_SEC);
+
+	tree_outputln(t, int_str);
+
+	for (int i = 0; i < 10; ++i)
+	{
+		tree_remove(t, GET_PTR(int, rand() % 100));
+	}
+
+	tree_outputln(t, int_str);
 
 	TreeNode *tn = tree_lookup_node(t, GET_PTR(int, 10));
 
@@ -183,7 +192,7 @@ void test5()
 
 int main(int argc, char *argv[])
 {
-	test5();
+	test3();
 
 	return 0;
 }

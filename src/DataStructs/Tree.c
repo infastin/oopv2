@@ -328,20 +328,20 @@ static void _TreeNode_prepare_remove(TreeNode *node, TreeNode **n, TreeNode **c)
 		TreeNode *s = node->right;
 		for (; s->left != NULL; s = s->left);
 
-		TreeNode *tmp_left = node->left;
-		TreeNode *tmp_right = node->right;
-		TreeNode *tmp_parent = node->parent;
-		tn_color  tmp_color = node->color;
+		void *tmp_value = node->value;
+		void *tmp_key = node->key;
+		size_t tmp_valuesize = node->valuesize;
+		size_t tmp_keysize = node->keysize;
 
-		node->left = s->left;
-		node->right = s->right;
-		node->parent = s->parent;
-		node->color = s->color;
+		node->value = s->value;
+		node->key = s->key;
+		node->valuesize = s->valuesize;
+		node->keysize = s->keysize;
 
-		s->left = tmp_left;
-		s->right = tmp_right;
-		s->parent = tmp_parent;
-		s->color = tmp_color;
+		s->value = tmp_value;
+		s->key = tmp_key;
+		s->valuesize = tmp_valuesize;
+		s->keysize = tmp_keysize;
 
 		node = s;
 	}

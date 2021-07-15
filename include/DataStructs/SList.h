@@ -31,6 +31,7 @@ ssize_t slist_get_length(const SList *self);
 void slist_node_data(const SListNode *self, void *ret);
 SListNode* slist_node_next(const SListNode *self);
 void slist_sort(SList *self, CmpFunc cmp_func);
+void slist_node_swap(SListNode *a, SListNode *b);
 
 #define slist_output(self, str_func...)                        \
 	(                                                          \

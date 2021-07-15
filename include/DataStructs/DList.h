@@ -31,7 +31,7 @@ void   dlist_set_free_func(DList *self, FreeFunc free_func);
 void   dlist_foreach(DList *self, JustFunc func, void *userdata);
 ssize_t dlist_count(const DList *self, const void *target, CmpFunc cmp_func);
 DList* dlist_remove_sibling(DList *self, DListNode *sibling);
-DList* dlist_swap(DList *self, DListNode *a_sib, DListNode *b_sib);
+void dlist_node_swap(DListNode *a, DListNode *b);
 DList* dlist_splice(DList *self, DListNode *l_sib, DListNode *r_sib, DList *other, DListNode *o_sib);
 ssize_t dlist_get_length(const DList *self);
 void dlist_node_data(const DListNode *self, void *ret);

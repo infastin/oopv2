@@ -559,6 +559,18 @@ static SListNode* SList_find(SList *self, const void *target, CmpFunc cmp_func)
 	return NULL;
 }
 
+static void SListNode_swap(SListNode *a, SListNode *b)
+{
+	void *tmp_data = a->data;
+	size_t tmp_size = a->size;
+
+	a->data = b->data;
+	a->size = b->size;
+
+	b->data = tmp_data;
+	b->size = tmp_size;
+}
+
 static size_t SList_count(const SList *self, const void *target, CmpFunc cmp_func)
 {
 	SListNode *current = self->start;
@@ -792,6 +804,14 @@ SListNode* slist_node_next(const SListNode *self)
 {
 	return_val_if_fail(self != NULL, NULL);
 	return self->next;
+}
+
+void slist_node_swap(SListNode *a, SListNode *b)
+{
+	return_if_fail(a != NULL);
+	return_if_fail(b != NULL);
+
+	SListNode_swap(a, b);
 }
 
 /* }}} */

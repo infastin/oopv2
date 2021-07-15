@@ -164,64 +164,6 @@ static DListNode* _DListNode_new(size_t size, const void *data)
 	return res;
 }
 
-static void _DListNode_swap(DListNode *a, DListNode *b)
-{
-	DListNode *x = a->prev;
-	DListNode *y = a->next;
-
-	DListNode *z = b->prev;
-	DListNode *w = b->next;
-
-	if (a->next == b)
-	{
-		a->prev = b;
-		a->next = w;
-
-		b->next = a;
-		b->prev = x;
-
-		if (x != NULL)
-			x->next = b;
-
-		if (w != NULL)
-			w->prev = a;
-	}
-	else if (a->prev == b)
-	{
-		a->next = b;
-		a->prev = z;
-
-		b->prev = a;
-		b->next = y;
-
-		if (z != NULL)
-			z->next = a;
-
-		if (y != NULL)
-			y->prev = b;
-	}
-	else
-	{
-		if (x != NULL)
-			x->next = b;
-
-		if (y != NULL)
-			y->prev = b;
-
-		if (z != NULL)
-			z->next = a;
-
-		if (w != NULL)
-			w->prev = a;
-
-		a->prev = z;
-		a->next = w;
-
-		b->prev = x;
-		b->next = y;
-	}
-}
-
 /* }}} Other */
 
 /* Removing {{{ */
@@ -713,21 +655,16 @@ static void DList_foreach(DList *self, JustFunc func, void *userdata)
 	}
 }
 
-static DList* DList_swap(DList *self, DListNode *a, DListNode *b)
+static void DListNode_swap(DListNode *a, DListNode *b)
 {
-	_DListNode_swap(a, b);
+	void *tmp_data = a->data;
+	size_t tmp_size = a->size;
 
-	if (a == self->start)
-		self->start = b;
-	else if (b == self->start)
-		self->start = a;
+	a->data = b->data;
+	a->size = b->size;
 
-	if (a == self->end)
-		self->end = b;
-	else if (b == self->end)
-		self->end = a;
-
-	return self;
+	b->data = tmp_data;
+	b->size = tmp_size;
 }
 
 static size_t DList_count(const DList *self, const void *target, CmpFunc cmp_func)
@@ -868,13 +805,12 @@ DList* dlist_copy(const DList *self)
 	return (DList*)object_copy((const Object*) self);
 }
 
-DList* dlist_swap(DList *self, DListNode *a, DListNode *b)
+void dlist_node_swap(DListNode *a, DListNode *b)
 {
-	return_val_if_fail(IS_DLIST(self), NULL);
-	return_val_if_fail(a != NULL, NULL);
-	return_val_if_fail(b != NULL, NULL);
+	return_if_fail(a != NULL);
+	return_if_fail(b != NULL);
 
-	return DList_swap(self, a, b);
+	DListNode_swap(a, b);
 }
 
 DListNode* dlist_insert_before_val(DList *self, const void *target, CmpFunc cmp_func, const void *data, size_t size)

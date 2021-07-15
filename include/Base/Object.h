@@ -9,8 +9,6 @@
 #include "Definitions.h"
 #include "Macros.h"
 
-#define MAGIC_NUM 0xAb0bA
-
 #define DEFINE_TYPE(TN, t_n, t_p)                                        \
 	static Type __##TN##Class;                                           \
 	Type t_n##_class_get_type(void)                                      \

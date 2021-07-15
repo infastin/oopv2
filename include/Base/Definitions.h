@@ -3,6 +3,10 @@
 
 #include <stddef.h>
 
+#define UINT_BIT (sizeof(unsigned int) * 8)
+#define ULONG_BIT (sizeof(unsigned long) * 8)
+#define ULLONG_BIT (sizeof(unsigned long long) * 8)
+
 typedef unsigned long Type;
 
 typedef void (*VoidFunc)(void);

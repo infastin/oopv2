@@ -3,12 +3,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 #include "Base.h"
 #include "DataStructs/DList.h"
 #include "Interfaces/StringerInterface.h"
 
 /* Predefinitions {{{ */
+
+struct _DlistNode
+{
+	DListNode *next;
+	DListNode *prev;
+	void *data;
+	size_t size;
+};
 
 struct _DList
 {
@@ -27,6 +36,107 @@ DEFINE_TYPE_WITH_IFACES(DList, dlist, object, 1,
 /* }}} */
 
 /* Private methods {{{ */
+
+/* Sorting {{{ */
+
+DListNode* _DList_merge(DListNode *first, DListNode *second, DListNode **end, CmpFunc cmp_func)
+{
+	DListNode *result = NULL;
+	DListNode *prev = NULL;
+	DListNode **linkp = &result;
+
+	DListNode *f = first;
+	DListNode *s = second;
+
+	while (1) 
+	{
+		if (f == NULL && s == NULL)
+			break;
+
+		if (f == NULL)
+		{
+			s->prev = prev;
+			*linkp = s;
+
+			if (end != NULL)
+				*end = s;
+
+			break;
+		}
+
+		if (s == NULL)
+		{
+			f->prev = prev;
+			*linkp = f;
+
+			if (end != NULL)
+				*end = f;
+
+			break;
+		}
+
+		if (cmp_func(f->data, s->data) <= 0)
+		{
+			f->prev = prev;
+			prev = *linkp = f;
+			linkp = &f->next;
+			f = f->next;
+		}
+		else
+		{
+			s->prev = prev;
+			prev = *linkp = s;
+			linkp = &s->next;
+			s = s->next;
+		}
+	}
+
+	return result;
+}
+
+DListNode* _DList_merge_sort(DListNode *start, DListNode **end, size_t len, CmpFunc cmp_func)
+{
+	if (start == NULL)
+		return NULL;
+
+	int arr_len = ULONG_BIT - __builtin_clzl(len);
+	DListNode **arr = (DListNode**)calloc(arr_len, sizeof(DListNode*));
+	DListNode *result;
+
+	result = start;
+
+	while (result != NULL) 
+	{
+		DListNode *next;
+		int i;
+
+		next = result->next;
+		result->next = NULL;
+
+		for (i = 0; (i < arr_len) && (arr[i] != NULL); i++)
+		{
+			result = _DList_merge(arr[i], result, NULL, cmp_func);
+			arr[i] = NULL;
+		}
+
+		if (i == arr_len)
+			i--;
+
+		arr[i] = result;
+		result = next;
+	}
+
+	for (size_t i = 0; i < arr_len; ++i)
+		result = _DList_merge(arr[i], result, end, cmp_func);
+
+	free(arr);
+
+	return result;
+}
+
+/* }}} Sorting */
+
+/* Other {{{ */
 
 static DListNode* _DListNode_new(size_t size, const void *data)
 {
@@ -54,9 +164,72 @@ static DListNode* _DListNode_new(size_t size, const void *data)
 	return res;
 }
 
-static DList* _DList_rf_val(DList *self, const void *target, CmpFunc cmp_func, bool to_all, bool to_free)
+static void _DListNode_swap(DListNode *a, DListNode *b)
+{
+	DListNode *x = a->prev;
+	DListNode *y = a->next;
+
+	DListNode *z = b->prev;
+	DListNode *w = b->next;
+
+	if (a->next == b)
+	{
+		a->prev = b;
+		a->next = w;
+
+		b->next = a;
+		b->prev = x;
+
+		if (x != NULL)
+			x->next = b;
+
+		if (w != NULL)
+			w->prev = a;
+	}
+	else if (a->prev == b)
+	{
+		a->next = b;
+		a->prev = z;
+
+		b->prev = a;
+		b->next = y;
+
+		if (z != NULL)
+			z->next = a;
+
+		if (y != NULL)
+			y->prev = b;
+	}
+	else
+	{
+		if (x != NULL)
+			x->next = b;
+
+		if (y != NULL)
+			y->prev = b;
+
+		if (z != NULL)
+			z->next = a;
+
+		if (w != NULL)
+			w->prev = a;
+
+		a->prev = z;
+		a->next = w;
+
+		b->prev = x;
+		b->next = y;
+	}
+}
+
+/* }}} Other */
+
+/* Removing {{{ */
+
+static DList* _DList_rf_val(DList *self, const void *target, CmpFunc cmp_func, bool to_all)
 {
 	DListNode *current = self->start;
+	bool was_removed = false;
 
 	while (current != NULL) 
 	{
@@ -66,7 +239,7 @@ static DList* _DList_rf_val(DList *self, const void *target, CmpFunc cmp_func, b
 			{
 				self->start = current->next;
 
-				if (to_free)
+				if (self->ff != NULL)
 					self->ff(*(void**) current->data);
 
 				free(current->data);
@@ -87,7 +260,7 @@ static DList* _DList_rf_val(DList *self, const void *target, CmpFunc cmp_func, b
 
 				DListNode *tmp = current->prev;
 
-				if (to_free)
+				if (self->ff != NULL)
 					self->ff(*(void**) current->data);
 
 				free(current->data);
@@ -96,6 +269,7 @@ static DList* _DList_rf_val(DList *self, const void *target, CmpFunc cmp_func, b
 			}
 
 			self->len--;
+			was_removed = true;
 
 			if (to_all)
 				continue;
@@ -106,10 +280,10 @@ static DList* _DList_rf_val(DList *self, const void *target, CmpFunc cmp_func, b
 		current = current->next;
 	}
 
-	return self;
+	return (was_removed) ? self : NULL;
 }
 
-static DList* _DList_rf_sibling(DList *self, DListNode *sibling, bool to_free)
+static DList* _DList_rf_sibling(DList *self, DListNode *sibling)
 {
 	DListNode *current = self->start;
 
@@ -121,7 +295,7 @@ static DList* _DList_rf_sibling(DList *self, DListNode *sibling, bool to_free)
 			{
 				self->start = current->next;
 
-				if (to_free)
+				if (self->ff != NULL)
 					self->ff(*(void**) current->data);
 
 				free(current->data);
@@ -142,7 +316,7 @@ static DList* _DList_rf_sibling(DList *self, DListNode *sibling, bool to_free)
 				else
 					self->end = current->prev;
 
-				if (to_free)
+				if (self->ff != NULL)
 					self->ff(*(void**) current->data);
 
 				free(current->data);
@@ -150,14 +324,16 @@ static DList* _DList_rf_sibling(DList *self, DListNode *sibling, bool to_free)
 			}
 
 			self->len--;
-			break;
+			return self;
 		}
 
 		current = current->next;
 	}
 
-	return self;
+	return NULL;
 }
+
+/* }}} */
 
 /* }}} */
 
@@ -169,7 +345,7 @@ static Object* DList_ctor(Object *_self, va_list *ap)
 {
 	DList *self = DLIST(OBJECT_CLASS(OBJECT_TYPE)->ctor(_self, ap));
 
-	self->ff = free;
+	self->ff = NULL;
 	self->start = NULL;
 	self->end = NULL;
 	self->len = 0;
@@ -181,15 +357,13 @@ static Object* DList_dtor(Object *_self, va_list *ap)
 {
 	DList *self = DLIST(_self);
 
-	bool free_data = (bool) va_arg(*ap, int);
-
 	if (self->start != NULL)
 	{
 		DListNode *current = self->start;
 
 		while (current != NULL) 
 		{
-			if (free_data)
+			if (self->ff != NULL)
 				self->ff(*(void**) current->data);
 
 			free(current->data);
@@ -448,22 +622,12 @@ static DListNode* DList_insert_before_val(DList *self, const void *target, CmpFu
 
 static DList* DList_remove_val(DList *self, const void *target, CmpFunc cmp_func, bool remove_all)
 {
-	return _DList_rf_val(self, target, cmp_func, remove_all, false);
+	return _DList_rf_val(self, target, cmp_func, remove_all);
 }
 
 static DList* DList_remove_sibling(DList *self, DListNode *sibling)
 {
-	return _DList_rf_sibling(self, sibling, false);
-}
-
-static DList* DList_free_sibling(DList *self, DListNode *sibling)
-{
-	return _DList_rf_sibling(self, sibling, true);
-}
-
-static DList* DList_free_val(DList *self, const void *target, CmpFunc cmp_func, bool free_all)
-{
-	return _DList_rf_val(self, target, cmp_func, free_all, true);
+	return _DList_rf_sibling(self, sibling);
 }
 
 /* }}} */
@@ -498,7 +662,7 @@ static void DList_string(const Stringer *_self, va_list *ap)
 
 	DListNode *current;
 
-	if (side == DLIST_OUTPUT_TO_LEFT)
+	if (side == DLIST_OUTPUT_TO_RIGHT)
 	{
 		current = self->start;
 
@@ -516,7 +680,7 @@ static void DList_string(const Stringer *_self, va_list *ap)
 			current = current->next;
 		}
 	}
-	else if (side == DLIST_OUTPUT_TO_RIGHT)
+	else if (side == DLIST_OUTPUT_TO_LEFT)
 	{
 		current = self->end;
 
@@ -549,12 +713,19 @@ static void DList_foreach(DList *self, JustFunc func, void *userdata)
 	}
 }
 
-static DList* DList_swap(DList *self, DListNode *a_sib, DListNode *b_sib)
+static DList* DList_swap(DList *self, DListNode *a, DListNode *b)
 {
-	void *tmp = a_sib->data;
+	_DListNode_swap(a, b);
 
-	a_sib->data = b_sib->data;
-	b_sib->data = tmp;
+	if (a == self->start)
+		self->start = b;
+	else if (b == self->start)
+		self->start = a;
+
+	if (a == self->end)
+		self->end = b;
+	else if (b == self->end)
+		self->end = a;
 
 	return self;
 }
@@ -576,31 +747,25 @@ static size_t DList_count(const DList *self, const void *target, CmpFunc cmp_fun
 	return count;
 }
 
-static DList* DList_splice(DList *self, DListNode *l_sib, DListNode *r_sib, DList *other, DListNode *o_sib)
+static DList* DList_reverse(DList *self)
 {
-	DListNode *l_spliced = l_sib->next;
-	DListNode *r_spliced = r_sib->prev;
+	DListNode *current = self->start;
 
-	l_sib->next = r_sib;
-	r_sib->prev = l_sib;
+	while (current != NULL) 
+	{
+		DListNode *tmp = current->prev;
+		current->prev = current->next;
+		current->next = tmp;
+		current = current->prev;
+	}
 
-	l_spliced->prev = o_sib;
-	r_spliced->next = o_sib->next;
-	o_sib->next = l_spliced;
+	DListNode *oldstart = self->start;
 
-	if (other->end == o_sib)
-		other->end = r_spliced;
+	oldstart->next = NULL;
+	self->start = self->end;
+	self->end = oldstart;
 
-	size_t elems = 1;
-
-	for(DListNode *current = l_spliced; 
-			current != r_spliced && current != NULL; 
-			current = current->next, elems++);
-
-	self->len -= elems;
-	other->len += elems;
-
-	return other;
+	return self;
 }
 
 /* }}} */
@@ -640,13 +805,6 @@ DList* dlist_remove_val(DList *self, const void *target, CmpFunc cmp_func, bool 
 	return_val_if_fail(IS_DLIST(self), NULL);
 	return_val_if_fail(cmp_func != NULL, NULL);
 	return DList_remove_val(self, target, cmp_func, remove_all);
-}
-
-DList* dlist_free_val(DList *self, const void *target, CmpFunc cmp_func, bool free_all)
-{
-	return_val_if_fail(IS_DLIST(self), NULL);
-	return_val_if_fail(cmp_func != NULL, NULL);
-	return DList_free_val(self, target, cmp_func, free_all);
 }
 
 void dlist_foreach(DList *self, JustFunc func, void *userdata)
@@ -698,29 +856,6 @@ DList* dlist_remove_sibling(DList *self, DListNode *sibling)
 	return DList_remove_sibling(self, sibling);
 }
 
-DList* dlist_free_sibling(DList *self, DListNode *sibling)
-{
-	return_val_if_fail(IS_DLIST(self), NULL);
-	return_val_if_fail(sibling != NULL, NULL);
-	return DList_free_sibling(self, sibling);
-}
-
-DList* dlist_set(DList *self, DListNode *sibling, const void *data)
-{
-	return_val_if_fail(IS_DLIST(self), NULL);
-	return_val_if_fail(sibling != NULL, NULL);
-
-	return (DList*)object_set((Object*) self, sibling, data);
-}
-
-void dlist_get(const DList *self, DListNode *sibling, void *ret)
-{
-	return_if_fail(IS_DLIST(self));
-	return_if_fail(sibling != NULL);
-
-	object_get((const Object*) self, sibling, ret);
-}
-
 void dlist_delete(DList *self, bool free_data)
 {
 	return_if_fail(IS_DLIST(self));
@@ -733,22 +868,13 @@ DList* dlist_copy(const DList *self)
 	return (DList*)object_copy((const Object*) self);
 }
 
-DList* dlist_swap(DList *self, DListNode *a_sib, DListNode *b_sib)
+DList* dlist_swap(DList *self, DListNode *a, DListNode *b)
 {
 	return_val_if_fail(IS_DLIST(self), NULL);
-	return DList_swap(self, a_sib, b_sib);
-}
+	return_val_if_fail(a != NULL, NULL);
+	return_val_if_fail(b != NULL, NULL);
 
-DList* dlist_splice(DList *self, DListNode *l_sib, DListNode *r_sib, DList *other, DListNode *o_sib)
-{
-	return_val_if_fail(IS_DLIST(self), NULL);
-	return_val_if_fail(IS_DLIST(other), NULL);
-
-	return_val_if_fail(l_sib != NULL, NULL);
-	return_val_if_fail(r_sib != NULL, NULL);
-	return_val_if_fail(o_sib != NULL, NULL);
-
-	return DList_splice(self, l_sib, r_sib, other, o_sib);
+	return DList_swap(self, a, b);
 }
 
 DListNode* dlist_insert_before_val(DList *self, const void *target, CmpFunc cmp_func, const void *data, size_t size)
@@ -774,6 +900,46 @@ DListNode* dlist_node_set(DListNode *self, const void *data, size_t size)
 		memset(self->data, 0, self->size);
 
 	return self;
+}
+
+void dlist_node_data(const DListNode *self, void *ret)
+{
+	return_if_fail(self != NULL);
+	return_if_fail(ret != NULL);
+	memcpy(ret, self->data, self->size);
+}
+
+DListNode* dlist_node_next(const DListNode *self)
+{
+	return_val_if_fail(self != NULL, NULL);
+	return self->next;
+}
+
+DListNode* dlist_node_prev(const DListNode *self)
+{
+	return_val_if_fail(self != NULL, NULL);
+	return self->prev;
+}
+
+void dlist_sort(DList *self, CmpFunc cmp_func)
+{
+	return_if_fail(IS_DLIST(self));
+	return_if_fail(cmp_func != NULL);
+
+	self->start = _DList_merge_sort(self->start, &self->end, self->len, cmp_func);
+
+	if (self->end->next != NULL)
+	{
+		DListNode *new_end = self->end;
+		for (; new_end->next != NULL; new_end = new_end->next);
+		self->end = new_end;
+	}
+}
+
+DList* dlist_reverse(DList *self)
+{
+	return_val_if_fail(IS_DLIST(self), NULL);
+	return DList_reverse(self);
 }
 
 /* }}} */

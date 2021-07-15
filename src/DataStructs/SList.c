@@ -11,6 +11,13 @@
 
 /* Predefinitions {{{ */
 
+struct _SListNode
+{
+	SListNode *next;
+	void *data;
+	size_t size;
+};
+
 struct _SList
 {
 	Object parent;
@@ -28,6 +35,102 @@ DEFINE_TYPE_WITH_IFACES(SList, slist, object, 1,
 /* }}} */
 
 /* Private methods {{{ */
+
+/* Sorting {{{ */
+
+SListNode* _SList_merge(SListNode *first, SListNode *second, SListNode **end, CmpFunc cmp_func)
+{
+	SListNode *result = NULL;
+	SListNode **linkp = &result;
+
+	SListNode *f = first;
+	SListNode *s = second;
+
+	while (1) 
+	{
+		if (f == NULL && s == NULL)
+			break;
+
+		if (f == NULL)
+		{
+			*linkp = s;
+
+			if (end != NULL)
+				*end = s;
+
+			break;
+		}
+
+		if (s == NULL)
+		{
+			*linkp = f;
+
+			if (end != NULL)
+				*end = f;
+
+			break;
+		}
+
+		if (cmp_func(f->data, s->data) <= 0)
+		{
+			*linkp = f;
+			linkp = &f->next;
+			f = f->next;
+		}
+		else
+		{
+			*linkp = s;
+			linkp = &s->next;
+			s = s->next;
+		}
+	}
+
+	return result;
+}
+
+SListNode* _SList_merge_sort(SListNode *start, SListNode **end, size_t len, CmpFunc cmp_func)
+{
+	if (start == NULL)
+		return NULL;
+
+	int arr_len = ULONG_BIT - __builtin_clzl(len);
+	SListNode **arr = (SListNode**)calloc(arr_len, sizeof(SListNode*));
+	SListNode *result;
+
+	result = start;
+
+	while (result != NULL) 
+	{
+		SListNode *next;
+		int i;
+
+		next = result->next;
+		result->next = NULL;
+
+		for (i = 0; (i < arr_len) && (arr[i] != NULL); i++)
+		{
+			result = _SList_merge(arr[i], result, NULL, cmp_func);
+			arr[i] = NULL;
+		}
+
+		if (i == arr_len)
+			i--;
+
+		arr[i] = result;
+		result = next;
+	}
+
+	for (size_t i = 0; i < arr_len; ++i)
+		result = _SList_merge(arr[i], result, end, cmp_func);
+
+	free(arr);
+
+	return result;
+}
+
+/* }}} Sorting */
+
+/* Other {{{ */
 
 static SListNode* _SListNode_new(size_t size, const void *data)
 {
@@ -54,10 +157,15 @@ static SListNode* _SListNode_new(size_t size, const void *data)
 	return res;
 }
 
-static SList* _SList_rf_val(SList *self, const void *target, CmpFunc cmp_func, bool to_all, bool to_free)
+/* }}} */
+
+/* Removing {{{ */
+
+static SList* _SList_rf_val(SList *self, const void *target, CmpFunc cmp_func, bool to_all)
 {
 	SListNode *current = self->start;
 	SListNode *prev = NULL;
+	bool was_removed = false;
 
 	while (current != NULL) 
 	{
@@ -67,7 +175,7 @@ static SList* _SList_rf_val(SList *self, const void *target, CmpFunc cmp_func, b
 			{
 				self->start = current->next;
 
-				if (to_free)
+				if (self->ff != NULL)
 					self->ff(*(void**) current->data);
 
 				free(current->data);
@@ -81,7 +189,7 @@ static SList* _SList_rf_val(SList *self, const void *target, CmpFunc cmp_func, b
 			{
 				prev->next = current->next;
 
-				if (to_free)
+				if (self->ff != NULL)
 					self->ff(*(void**) current->data);
 
 				free(current->data);
@@ -93,6 +201,7 @@ static SList* _SList_rf_val(SList *self, const void *target, CmpFunc cmp_func, b
 			}
 
 			self->len--;
+			was_removed = true;
 
 			if (to_all)
 				continue;
@@ -104,10 +213,10 @@ static SList* _SList_rf_val(SList *self, const void *target, CmpFunc cmp_func, b
 		current = current->next;
 	}
 
-	return self;
+	return (was_removed) ? self : NULL;
 }
 
-static SList* _SList_rf_sibling(SList *self, SListNode *sibling, bool to_free)
+static SList* _SList_rf_sibling(SList *self, SListNode *sibling)
 {
 	SListNode *current = self->start;
 	SListNode *prev = NULL;
@@ -120,7 +229,7 @@ static SList* _SList_rf_sibling(SList *self, SListNode *sibling, bool to_free)
 			{
 				self->start = current->next;
 
-				if (to_free)
+				if (self->ff != NULL)
 					self->ff(*(void**) current->data);
 
 				free(current->data);
@@ -134,7 +243,7 @@ static SList* _SList_rf_sibling(SList *self, SListNode *sibling, bool to_free)
 			{
 				prev->next = current->next;
 
-				if (to_free)
+				if (self->ff != NULL)
 					self->ff(*(void**) current->data);
 
 				free(current->data);
@@ -146,15 +255,17 @@ static SList* _SList_rf_sibling(SList *self, SListNode *sibling, bool to_free)
 			}
 
 			self->len--;
-			break;
+			return self;
 		}
 
 		prev = current;
 		current = current->next;
 	}
 
-	return self;
+	return NULL;
 }
+
+/* }}} */
 
 /* }}} */
 
@@ -166,7 +277,7 @@ static Object* SList_ctor(Object *_self, va_list *ap)
 {
 	SList *self = SLIST(OBJECT_CLASS(OBJECT_TYPE)->ctor(_self, ap));
 
-	self->ff = free;
+	self->ff = NULL;
 	self->start = NULL;
 	self->end = NULL;
 	self->len = 0;
@@ -178,15 +289,13 @@ static Object* SList_dtor(Object *_self, va_list *ap)
 {
 	SList *self = SLIST(_self);
 
-	bool free_data = (bool)va_arg(*ap, int);
-
 	if (self->start != NULL)
 	{
 		SListNode *current = self->start;
 
 		while (current != NULL) 
 		{
-			if (free_data)
+			if (self->ff != NULL)
 				self->ff(*(void**) current->data);
 
 			free(current->data);
@@ -423,24 +532,13 @@ static SListNode* SList_insert(SList *self, size_t index, const void *data, size
 
 static SList* SList_remove_val(SList *self, const void *target, CmpFunc cmp_func, bool remove_all)
 {
-	return _SList_rf_val(self, target, cmp_func, remove_all, false);
+	return _SList_rf_val(self, target, cmp_func, remove_all);
 }
 
 static SList* SList_remove_sibling(SList *self, SListNode *sibling)
 {
-	return _SList_rf_sibling(self, sibling, false);
+	return _SList_rf_sibling(self, sibling);
 }
-
-static SList* SList_free_sibling(SList *self, SListNode *sibling)
-{
-	return _SList_rf_sibling(self, sibling, true);
-}
-
-static SList* SList_free_val(SList *self, const void *target, CmpFunc cmp_func, bool free_all)
-{
-	return _SList_rf_val(self, target, cmp_func, free_all, true);
-}
-
 
 /* }}} */
 
@@ -550,10 +648,10 @@ SList* slist_new(void)
 	return (SList*)object_new(SLIST_TYPE);
 }
 
-void slist_delete(SList *self, bool free_data)
+void slist_delete(SList *self)
 {
 	return_if_fail(IS_SLIST(self));
-	object_delete((Object*) self, free_data);
+	object_delete((Object*) self);
 }
 
 SList* slist_copy(const SList *self)
@@ -610,13 +708,6 @@ SList* slist_remove_val(SList *self, const void *target, CmpFunc cmp_func, bool 
 	return SList_remove_val(self, target, cmp_func, remove_all);
 }
 
-SList* slist_free_val(SList *self, const void *target, CmpFunc cmp_func, bool free_all)
-{
-	return_val_if_fail(IS_SLIST(self), NULL);
-	return_val_if_fail(cmp_func != NULL, NULL);
-	return SList_free_val(self, target, cmp_func, free_all);
-}
-
 void slist_set_free_func(SList *self, FreeFunc free_func)
 {
 	return_if_fail(IS_SLIST(self));
@@ -650,12 +741,6 @@ SList* slist_remove_sibling(SList *self, SListNode *sibling)
 	return SList_remove_sibling(self, sibling);
 }
 
-SList* slist_free_sibling(SList *self, SListNode *sibling)
-{
-	return_val_if_fail(IS_SLIST(self), NULL);
-	return SList_free_sibling(self, sibling);
-}
-
 SListNode* slist_insert_before_val(SList *self, const void *target, CmpFunc cmp_func, const void *data, size_t size)
 {
 	return_val_if_fail(IS_SLIST(self), NULL);
@@ -679,6 +764,34 @@ SListNode* slist_node_set(SListNode *self, const void *data, size_t size)
 		memset(self->data, 0, self->size);
 
 	return self;
+}
+
+void slist_sort(SList *self, CmpFunc cmp_func)
+{
+	return_if_fail(IS_SLIST(self));
+	return_if_fail(cmp_func != NULL);
+
+	self->start = _SList_merge_sort(self->start, &self->end, self->len, cmp_func);
+
+	if (self->end->next != NULL)
+	{
+		SListNode *new_end = self->end;
+		for (; new_end->next != NULL; new_end = new_end->next);
+		self->end = new_end;
+	}
+}
+
+void slist_node_data(const SListNode *self, void *ret)
+{
+	return_if_fail(self != NULL);
+	return_if_fail(ret != NULL);
+	memcpy(ret, self->data, self->size);
+}
+
+SListNode* slist_node_next(const SListNode *self)
+{
+	return_val_if_fail(self != NULL, NULL);
+	return self->next;
 }
 
 /* }}} */

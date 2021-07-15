@@ -11,7 +11,7 @@
 
 #define mass_cell(m, e, i) (&((char*) (m))[(i) * (e)])
 
-#define salloc(struct_type, n_structs) ((n_structs > 0) ? (malloc(sizeof(struct_type) * n_structs)) : (NULL))
-#define salloc0(struct_type, n_structs) ((n_structs > 0) ? (calloc(n_structs, sizeof(struct_type))) : (NULL))
+#define salloc(struct_type, n_structs) ((struct_type*) ((n_structs > 0) ? (malloc(sizeof(struct_type) * n_structs)) : (NULL)))
+#define salloc0(struct_type, n_structs) ((struct_type*) ((n_structs > 0) ? (calloc(n_structs, sizeof(struct_type))) : (NULL)))
 
 #endif /* end of include guard: MACROS_H_BUTIA83G */

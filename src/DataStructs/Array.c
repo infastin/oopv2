@@ -14,25 +14,24 @@
 
 static void stringer_interface_init(StringerInterface *iface);
 
-DEFINE_TYPE_WITH_IFACES(Array, array, object, 1,
-		USE_INTERFACE(STRINGER_INTERFACE_TYPE, stringer_interface_init));
-
-typedef struct _ArrayData ArrayData;
-
-struct _ArrayData
+struct _Array
 {
-	size_t elemsize;
-	size_t capacity;
+	Object parent;
 	FreeFunc ff;
+	void *mass;
+	size_t capacity;
+	size_t elemsize;
+	size_t len;
 	bool clear;
 	bool zero_terminated;
 };
 
+DEFINE_TYPE_WITH_IFACES(Array, array, object, 1,
+		USE_INTERFACE(STRINGER_INTERFACE_TYPE, stringer_interface_init));
+
 #define BINARY_SEARCH_LEN_THRESHOLD 32
 
-#define arr_mass(s) ((char*) &((ArrayData*) ((s)->data))[1])
-#define arr_cell(s, i) (&((char*) &((ArrayData*) ((s)->data))[1])[(i) * (arr_data(s)->elemsize)])
-#define arr_data(s) ((ArrayData*) ((s)->data))
+#define arr_cell(s, i) (&((char*) ((s)->mass))[(i) * (s)->elemsize])
 
 /* }}} */
 
@@ -43,7 +42,7 @@ static Array* _Array_growcap(Array *self, size_t add)
 	if (add == 0)
 		return self;
 
-	size_t mincap = arr_data(self)->capacity + add;
+	size_t mincap = self->capacity + add;
 	size_t new_allocated = (mincap >> 3) + (mincap < 9 ? 3 : 6);
 
 	if (mincap > SIZE_MAX - new_allocated)
@@ -54,37 +53,34 @@ static Array* _Array_growcap(Array *self, size_t add)
 
 	mincap += new_allocated;
 
-	void *data = (void*)realloc(self->data, sizeof(ArrayData) + mincap * arr_data(self)->elemsize);
+	void *mass = (void*)realloc(self->mass, mincap * self->elemsize);
 
-	if (data == NULL)
+	if (mass == NULL)
 	{
 		msg_error("couldn't reallocate memory for array!");
 		return NULL;
 	}
 
-	self->data = data;
+	self->mass = mass;
 
-	if (arr_data(self)->clear)
-		memset(arr_cell(self, arr_data(self)->capacity), 0, (mincap - arr_data(self)->capacity) * arr_data(self)->elemsize);
+	if (self->clear)
+		memset(arr_cell(self, self->capacity), 0, (mincap - self->capacity) * self->elemsize);
 
-	arr_data(self)->capacity = mincap;
+	self->capacity = mincap;
 
 	return self;
 }
 
 static Array* _Array_insert(Array *self, size_t index, const void *data)
 {
-	int zt = 0;
+	int zt = self->zero_terminated;
 
-	if (arr_data(self)->zero_terminated)
-		zt = 1;
-
-	if (index + zt >= arr_data(self)->capacity)
+	if (index + zt >= self->capacity)
 	{
-		self = _Array_growcap(self, (index + zt + 1) - arr_data(self)->capacity);
+		self = _Array_growcap(self, (index + zt + 1) - self->capacity);
 		return_val_if_fail(self != NULL, NULL);
 	}
-	else if (self->len >= arr_data(self)->capacity)
+	else if (self->len >= self->capacity)
 	{
 		self = _Array_growcap(self, 1);
 		return_val_if_fail(self != NULL, NULL);
@@ -92,8 +88,7 @@ static Array* _Array_insert(Array *self, size_t index, const void *data)
 
 	if (index + 1 >= self->len && zt)
 	{
-		memset(arr_cell(self, index + 1), 0, arr_data(self)->elemsize);
-
+		memset(arr_cell(self, index + 1), 0, self->elemsize);
 		self->len = index + zt + 1;
 	}
 	else if (index >= self->len)
@@ -102,28 +97,28 @@ static Array* _Array_insert(Array *self, size_t index, const void *data)
 	}
 	else
 	{
-		memmove(arr_cell(self, index + 1), arr_cell(self, index), (self->len - index) * arr_data(self)->elemsize);
+		memmove(arr_cell(self, index + 1), arr_cell(self, index), (self->len - index) * self->elemsize);
 		self->len++;
 	}
 
-	memcpy(arr_cell(self, index), data, arr_data(self)->elemsize);
+	if (data == NULL)
+		memset(arr_cell(self, index), 0, self->elemsize);
+	else
+		memcpy(arr_cell(self, index), data, self->elemsize);
 
 	return self;
 }
 
 static Array* _Array_insert_many(Array *self, size_t index, const void *data, size_t len)
 {
-	int zt = 0;
+	int zt = self->zero_terminated;
 
-	if (arr_data(self)->zero_terminated)
-		zt = 1;
-
-	if (index + zt + len >= arr_data(self)->capacity)
+	if (index + zt + len >= self->capacity)
 	{
-		self = _Array_growcap(self, (index + zt + len) - arr_data(self)->capacity);
+		self = _Array_growcap(self, (index + zt + len) - self->capacity);
 		return_val_if_fail(self != NULL, NULL);
 	}
-	else if (self->len + len >= arr_data(self)->capacity)
+	else if (self->len + len >= self->capacity)
 	{
 		self = _Array_growcap(self, len);
 		return_val_if_fail(self != NULL, NULL);
@@ -132,7 +127,7 @@ static Array* _Array_insert_many(Array *self, size_t index, const void *data, si
 	if (index + 1 >= self->len && zt)
 	{
 		self->len = index + len + zt;
-		memset(arr_cell(self, index + len), 0, arr_data(self)->elemsize);
+		memset(arr_cell(self, index + len), 0, self->elemsize);
 	}
 	else if (index >= self->len)
 	{
@@ -140,12 +135,20 @@ static Array* _Array_insert_many(Array *self, size_t index, const void *data, si
 	}
 	else
 	{
-		memmove(arr_cell(self, index + len), arr_cell(self, index), (self->len - index) * arr_data(self)->elemsize);
+		memmove(arr_cell(self, index + len), arr_cell(self, index), (self->len - index) * self->elemsize);
 		self->len += len;
 	}
 
-	for (size_t i = 0; i < len; ++i) 
-		memcpy(arr_cell(self, index + i), mass_cell(data, arr_data(self)->elemsize, i), arr_data(self)->elemsize);
+	if (data == NULL)
+	{
+		for (size_t i = 0; i < len; ++i)
+			memset(arr_cell(self, index + i), 0, self->elemsize);
+	}
+	else
+	{
+		for (size_t i = 0; i < len; ++i)
+			memcpy(arr_cell(self, index + i), mass_cell(data, self->elemsize, i), self->elemsize);
+	}
 
 	return self;
 }
@@ -163,23 +166,22 @@ static Object* Array_ctor(Object *_self, va_list *ap)
 	size_t elemsize = va_arg(*ap, size_t);
 
 	if (clear)
-		self->data = calloc(1, sizeof(ArrayData) + elemsize);
+		self->mass = calloc(1, elemsize);
 	else
-		self->data = malloc(sizeof(ArrayData) + elemsize);
+		self->mass = malloc(elemsize);
 
-	if (self->data == NULL)
+	if (self->mass == NULL)
 	{
 		object_delete((Object*) self);
 		msg_error("couldn't allocate memory for array!");
 		return NULL;
 	}
 
-	ArrayData *ad = (ArrayData*) self->data;
-	ad->clear = clear;
-	ad->zero_terminated = zero_terminated;
-	ad->ff = free;
-	ad->elemsize = elemsize;
-	ad->capacity = 1;
+	self->clear = clear;
+	self->zero_terminated = zero_terminated;
+	self->ff = NULL;
+	self->elemsize = elemsize;
+	self->capacity = 1;
 	
 	self->len = 0;
 
@@ -190,15 +192,13 @@ static Object* Array_dtor(Object *_self, va_list *ap)
 {
 	Array *self = ARRAY(_self);
 
-	bool free_segment = (bool)va_arg(*ap, int);
-
-	if (self->data != NULL)
+	if (self->mass != NULL)
 	{
-		if (free_segment)
+		if (self->ff != NULL)
 			for (size_t i = 0; i < self->len; ++i) 
-				arr_data(self)->ff(arr_cell(self, i));
+				self->ff(arr_cell(self, i));
 
-		free(self->data);
+		free(self->mass);
 	}
 
 	return _self;
@@ -209,23 +209,23 @@ static Object* Array_cpy(const Object *_self, Object *_object)
 	const Array *self = ARRAY(_self);
 	Array *object = ARRAY(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object));
 
-	object->data = calloc(1, sizeof(ArrayData) + arr_data(self)->capacity * arr_data(self)->elemsize);
+	object->mass = calloc(1, self->capacity * self->elemsize);
 
-	if (object->data == NULL)
+	if (object->mass == NULL)
 	{
 		object_delete((Object*) object);
 		msg_error("couldn't allocate memory for the copy of array!");
 		return NULL;
 	}
 
-	arr_data(object)->clear = arr_data(self)->clear;
-	arr_data(object)->zero_terminated = arr_data(self)->zero_terminated;
-	arr_data(object)->capacity = arr_data(self)->capacity;
-	arr_data(object)->elemsize = arr_data(self)->elemsize;
+	object->clear = self->clear;
+	object->zero_terminated = self->zero_terminated;
+	object->capacity = self->capacity;
+	object->elemsize = self->elemsize;
 
 	object->len = self->len;
 
-	memcpy(arr_mass(object), arr_mass(self), object->len * arr_data(object)->elemsize);
+	memcpy(object->mass, self->mass, object->len * object->elemsize);
 
 	return _object;
 }
@@ -237,21 +237,21 @@ static Object* Array_set(Object *_self, va_list *ap)
 	size_t index = va_arg(*ap, size_t);
 	const void *data = va_arg(*ap, const void*);
 
-	int zt = 0;
+	int zt = self->zero_terminated;
 
-	if (arr_data(self)->zero_terminated)
-		zt = 1;
-
-	if (index + zt >= arr_data(self)->capacity)
+	if (index + zt >= self->capacity)
 	{
-		self = _Array_growcap(self, (index + zt + 1) - arr_data(self)->capacity);
+		self = _Array_growcap(self, (index + zt + 1) - self->capacity);
 		return_val_if_fail(self != NULL, NULL);
 	}
 
-	memcpy(arr_cell(self, index), data, arr_data(self)->elemsize);
+	if (data == NULL)
+		memset(arr_cell(self, index), 0, self->elemsize);
+	else
+		memcpy(arr_cell(self, index), data, self->elemsize);
 
 	if (index + 1 >= self->len && zt) 
-		memset(arr_cell(self, index + 1), 0, arr_data(self)->elemsize);
+		memset(arr_cell(self, index + 1), 0, self->elemsize);
 
 	if (index + zt >= self->len)
 		self->len = index + zt + 1;
@@ -274,7 +274,7 @@ static void Array_get(const Object *_self, va_list *ap)
 		return;
 	}
 
-	memcpy(ret, arr_cell(self, index), arr_data(self)->elemsize);
+	memcpy(ret, arr_cell(self, index), self->elemsize);
 }
 
 static Array* Array_insert(Array *self, size_t index, const void *data)
@@ -289,7 +289,7 @@ static Array* Array_insert_many(Array *self, size_t index, const void *data, siz
 
 static Array* Array_append(Array *self, const void *data)
 {
-	if (arr_data(self)->zero_terminated)
+	if (self->zero_terminated)
 	{
 		if (self->len == 0)
 			return _Array_insert(self, self->len, data);
@@ -302,7 +302,7 @@ static Array* Array_append(Array *self, const void *data)
 
 static Array* Array_append_many(Array *self, const void *data, size_t len)
 {
-	if (arr_data(self)->zero_terminated)
+	if (self->zero_terminated)
 	{
 		if (self->len == 0)
 			return _Array_insert_many(self, self->len, data, len);
@@ -323,7 +323,7 @@ static Array* Array_prepend_many(Array *self, const void *data, size_t len)
 	return _Array_insert_many(self, 0, data, len);
 }
 
-static Array* Array_remove_index(Array *self, size_t index, bool to_free)
+static Array* Array_remove_index(Array *self, size_t index)
 {
 	if (index >= self->len)
 	{
@@ -331,23 +331,23 @@ static Array* Array_remove_index(Array *self, size_t index, bool to_free)
 		return NULL;
 	}
 
-	if (arr_data(self)->zero_terminated && (index == self->len - 1))
+	if (self->zero_terminated && (index == self->len - 1))
 	{
 		msg_warn("can't remove terminating zero at [%lu]!", index);
 		return NULL;
 	}
 
-	if (to_free)
-		arr_data(self)->ff(*((void**) arr_cell(self, index)));
+	if (self->ff != NULL)
+		self->ff(*((void**) arr_cell(self, index)));
 
-	memmove(arr_cell(self, index), arr_cell(self, index + 1), (self->len - index - 1) * arr_data(self)->elemsize);
+	memmove(arr_cell(self, index), arr_cell(self, index + 1), (self->len - index - 1) * self->elemsize);
 	
 	self->len--;
 
 	return self;
 }
 
-static Array* Array_remove_range(Array *self, size_t index, size_t len, bool to_free)
+static Array* Array_remove_range(Array *self, size_t index, size_t len)
 {
 	if (index + len >= self->len)
 	{
@@ -355,17 +355,17 @@ static Array* Array_remove_range(Array *self, size_t index, size_t len, bool to_
 		return NULL;
 	}
 
-	if (arr_data(self)->zero_terminated && (index + len == self->len - 1))
+	if (self->zero_terminated && (index + len == self->len - 1))
 	{
 		msg_warn("can't remove range [%lu:%lu] since it's overlapping terminating zero!", index, index + len - 1);
 		return NULL;
 	}
 
-	if (to_free)
+	if (self->ff != NULL)
 		for (size_t i = index; i < index + len; ++i) 
-			arr_data(self)->ff(arr_cell(self, i));
+			self->ff(arr_cell(self, i));
 
-	memmove(arr_cell(self, index), arr_cell(self, index + len), (self->len - len - index) * arr_data(self)->elemsize);
+	memmove(arr_cell(self, index), arr_cell(self, index + len), (self->len - len - index) * self->elemsize);
 
 	self->len -= len;
 
@@ -377,9 +377,9 @@ static void Array_sort(Array *self, CmpFunc cmp_func)
 	if (self->len <= 1)
 		return;
 
-	size_t len = (arr_data(self)->zero_terminated) ? (self->len - 1) : (self->len);
+	size_t len = (self->zero_terminated) ? (self->len - 1) : (self->len);
 
-	quicksort(arr_mass(self), len, arr_data(self)->elemsize, cmp_func);
+	quicksort(self->mass, len, self->elemsize, cmp_func);
 }
 
 static bool Array_binary_search(Array *self, const void *target, CmpFunc cmp_func, size_t *index)
@@ -387,23 +387,23 @@ static bool Array_binary_search(Array *self, const void *target, CmpFunc cmp_fun
 	if (self->len == 0)
 		return false;
 
-	size_t len = (arr_data(self)->zero_terminated) ? (self->len - 1) : (self->len);
+	size_t len = (self->zero_terminated) ? (self->len - 1) : (self->len);
 
 	if (len < BINARY_SEARCH_LEN_THRESHOLD)
-		return linear_search(arr_mass(self), target, len, arr_data(self)->elemsize, cmp_func, index);
+		return linear_search(self->mass, target, len, self->elemsize, cmp_func, index);
 
-	quicksort(arr_mass(self), len, arr_data(self)->elemsize, cmp_func);
-	return binary_search(arr_mass(self), target, 0, len - 1, arr_data(self)->elemsize, cmp_func, index);
+	quicksort(self->mass, len, self->elemsize, cmp_func);
+	return binary_search(self->mass, target, 0, len - 1, self->elemsize, cmp_func, index);
 }
 
-static Array* Array_remove_val(Array *self, const void *target, CmpFunc cmp_func, bool to_free, bool remove_all)
+static Array* Array_remove_val(Array *self, const void *target, CmpFunc cmp_func, bool remove_all)
 {
 	bool was_deleted = false;
 	size_t index;
 
 	while (Array_binary_search(self, target, cmp_func, &index)) 
 	{
-		Array_remove_index(self, index, to_free);
+		Array_remove_index(self, index);
 		was_deleted = true;
 
 		if (!remove_all)
@@ -418,14 +418,14 @@ static Array* Array_remove_val(Array *self, const void *target, CmpFunc cmp_func
 
 static Array* Array_unique(Array *self, CmpFunc cmp_func)
 {
-	Array *result = array_new(arr_data(self)->clear, arr_data(self)->zero_terminated, arr_data(self)->elemsize);
+	Array *result = array_new(self->clear, self->zero_terminated, self->elemsize);
 
 	return_val_if_fail(result != NULL, NULL);
 
 	if (self->len == 0)
 		return result;
 
-	size_t len = (arr_data(self)->zero_terminated) ? (self->len - 1) : (self->len);
+	size_t len = (self->zero_terminated) ? (self->len - 1) : (self->len);
 
 	if (len == 1)
 	{
@@ -433,7 +433,7 @@ static Array* Array_unique(Array *self, CmpFunc cmp_func)
 		return result;
 	}
 
-	quicksort(arr_mass(self), len, arr_data(self)->elemsize, cmp_func);
+	quicksort(self->mass, len, self->elemsize, cmp_func);
 
 	size_t result_last = 0;
 	Array_append(result, arr_cell(self, 0));
@@ -448,11 +448,6 @@ static Array* Array_unique(Array *self, CmpFunc cmp_func)
 	}
 
 	return result;
-}
-
-static void Array_set_free_func(Array *self, FreeFunc free_func)
-{
-	arr_data(self)->ff = free_func;
 }
 
 static void Array_string(const Stringer *_self, va_list *ap)
@@ -483,16 +478,16 @@ static void Array_string(const Stringer *_self, va_list *ap)
 
 static void* Array_steal(Array *self, size_t *len)
 {
-	void *ret = calloc(self->len, arr_data(self)->elemsize);
+	void *ret = calloc(self->len, self->elemsize);
 	return_val_if_fail(ret != NULL, NULL);
 
-	memcpy(ret, arr_mass(self), self->len * arr_data(self)->elemsize);
+	memcpy(ret, self->mass, self->len * self->elemsize);
 	
 	if (len != NULL)
 		*len = self->len;
 
 	self->len = 0;
-	memset(arr_mass(self), 0, self->len * arr_data(self)->elemsize);
+	memset(self->mass, 0, self->len * self->elemsize);
 
 	return ret;
 }
@@ -500,6 +495,12 @@ static void* Array_steal(Array *self, size_t *len)
 /* }}} */
 
 /* Selectors {{{ */
+
+Array* array_new(bool clear, bool zero_terminated, size_t elemsize)
+{
+	return_val_if_fail(elemsize != 0, NULL);
+	return (Array*)object_new(ARRAY_TYPE, clear, zero_terminated, elemsize);
+}
 
 Array* array_set(Array *self, size_t index, const void *data)
 {
@@ -510,6 +511,7 @@ Array* array_set(Array *self, size_t index, const void *data)
 void array_get(const Array *self, size_t index, void *ret)
 {
 	return_if_fail(IS_ARRAY(self));
+	return_if_fail(ret != NULL);
 	object_get((const Object*) self, index, ret);
 }
 
@@ -519,156 +521,104 @@ Array* array_copy(const Array *self)
 	return (Array*)object_copy((const Object*) self);
 }
 
+void array_delete(Array *self)
+{
+	return_if_fail(IS_ARRAY(self));
+	object_delete((Object*) self);
+}
+
 Array* array_append(Array *self, const void *data)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->append != NULL, NULL);
-	return klass->append(self, data);
+	return Array_append(self, data);
 }
 
 Array* array_prepend(Array *self, const void *data)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->prepend != NULL, NULL);
-	return klass->prepend(self, data);
+	return Array_prepend(self, data);
 }
 
 Array* array_insert(Array *self, size_t index, const void *data)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->insert != NULL, NULL);
-	return klass->insert(self, index, data);
+	return Array_insert(self, index, data);
 }
 
 Array* array_append_many(Array *self, const void *data, size_t len)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->append_many != NULL, NULL);
-	return klass->append_many(self, data, len);
+	return Array_append_many(self, data, len);
 }
 
 Array* array_prepend_many(Array *self, const void *data, size_t len)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->prepend_many != NULL, NULL);
-	return klass->prepend_many(self, data, len);
+	return Array_prepend_many(self, data, len);
 }
 
 Array* array_insert_many(Array *self, size_t index, const void *data, size_t len)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->insert_many != NULL, NULL);
-	return klass->insert_many(self, index, data, len);
+	return Array_insert_many(self, index, data, len);
 }
 
-Array* array_remove_index(Array *self, size_t index, bool to_free)
+Array* array_remove_index(Array *self, size_t index)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->remove_index != NULL, NULL);
-	return klass->remove_index(self, index, to_free);
+	return Array_remove_index(self, index);
 }
 
-Array* array_remove_val(Array *self, const void *target, CmpFunc cmp_func, bool to_free, bool remove_all)
+Array* array_remove_val(Array *self, const void *target, CmpFunc cmp_func, bool remove_all)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->remove_val != NULL, NULL);
-	return klass->remove_val(self, target, cmp_func, to_free, remove_all);
+	return_val_if_fail(cmp_func != NULL, NULL);
+	return Array_remove_val(self, target, cmp_func, remove_all);
 }
 
-Array* array_remove_range(Array *self, size_t index, size_t len, bool to_free)
+Array* array_remove_range(Array *self, size_t index, size_t len)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->remove_range != NULL, NULL);
-	return klass->remove_range(self, index, len, to_free);
+	return Array_remove_range(self, index, len);
 }
 
 void array_sort(Array *self, CmpFunc cmp_func)
 {
 	return_if_fail(IS_ARRAY(self));
-
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_if_fail(klass->sort != NULL);
-	klass->sort(self, cmp_func);
+	return_if_fail(cmp_func != NULL);
+	Array_sort(self, cmp_func);
 }
 
 bool array_binary_search(Array *self, const void *target, CmpFunc cmp_func, size_t *index)
 {
 	return_val_if_fail(IS_ARRAY(self), false);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->binary_search != NULL, false);
-	return klass->binary_search(self, target, cmp_func, index);
+	return_val_if_fail(cmp_func != NULL, false);
+	return Array_binary_search(self, target, cmp_func, index);
 }
 
 Array* array_unique(Array *self, CmpFunc cmp_func)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_val_if_fail(klass->unique != NULL, NULL);
-	return klass->unique(self, cmp_func);
+	return_val_if_fail(cmp_func != NULL, NULL);
+	return Array_unique(self, cmp_func);
 }
 
 void array_set_free_func(Array *self, FreeFunc free_func)
 {
 	return_if_fail(IS_ARRAY(self));
-
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-
-	return_if_fail(klass->set_free_func != NULL);
-	klass->set_free_func(self, free_func);
+	self->ff = free_func;
 }
 
-Array* array_new(bool clear, bool zero_terminated, size_t elemsize)
-{
-	return (Array*)object_new(ARRAY_TYPE, clear, zero_terminated, elemsize);
-}
-
-void array_delete(Array *self, bool free_segment)
-{
-	return_if_fail(IS_ARRAY(self));
-	object_delete((Object*) self, free_segment);
-}
-
-void *array_steal(Array *self, size_t *len)
+void* array_steal(Array *self, size_t *len)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
-	
-	ArrayClass *klass = ARRAY_GET_CLASS(self);
-	
-	return_val_if_fail(klass->steal != NULL, NULL);
-	return klass->steal(self, len);
+	return Array_steal(self, len);
+}
+
+ssize_t array_get_length(const Array *self)
+{
+	return_val_if_fail(IS_ARRAY(self), -1);
+	return self->len;
 }
 
 /* }}} */
@@ -687,21 +637,6 @@ static void array_class_init(ArrayClass *klass)
 	OBJECT_CLASS(klass)->set = Array_set;
 	OBJECT_CLASS(klass)->get = Array_get;
 	OBJECT_CLASS(klass)->cpy = Array_cpy;
-
-	klass->append = Array_append;
-	klass->prepend = Array_prepend;
-	klass->insert = Array_insert;
-	klass->set_free_func = Array_set_free_func;
-	klass->sort = Array_sort;
-	klass->unique = Array_unique;
-	klass->remove_index = Array_remove_index;
-	klass->remove_val = Array_remove_val;
-	klass->append_many = Array_append_many;
-	klass->prepend_many = Array_prepend_many;
-	klass->insert_many = Array_insert_many;
-	klass->remove_range = Array_remove_range;
-	klass->binary_search = Array_binary_search;
-	klass->steal = Array_steal;
 }
 
 /* }}} */

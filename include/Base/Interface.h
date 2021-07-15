@@ -7,11 +7,12 @@
 
 #include "Definitions.h"
 
-#define IFACE_MAGIC_NUM 0xB00BA
-#define IFACE_TYPE_MAGIC_NUM 0xAAAAA
-
 typedef struct _Interface Interface;
-typedef struct _InterfaceType InterfaceType;
+
+struct _Interface
+{
+	void *private[5];
+};
 
 #define USE_INTERFACE(type, init) (type), (init)
 
@@ -48,25 +49,6 @@ typedef struct _InterfaceType InterfaceType;
 	inline bool IS_##MODULE_OBJ_NAME(const ModuleObjName *self) { 														\
 		return hasInterface(module_obj_name##_interface_get_type(), (const void*) self); }
 	
-
-struct _InterfaceType
-{
-	unsigned int magic;
-	const char *name;
-	size_t size;
-	size_t itypes_count;
-	InterfaceType **itypes;
-};
-
-struct _Interface
-{
-	unsigned int magic;
-	const InterfaceType* itype;
-	void (*init)(Interface* interface);
-	size_t ifaces_count;
-	Interface **ifaces;
-};
-
 Type isInterfaceType(Type itype);
 const Interface* isInterface(const void *_iface);
 bool hasInterface(Type itype, const void *self);

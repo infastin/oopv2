@@ -11,15 +11,8 @@ DECLARE_TYPE(SList, slist, SLIST, Object);
 
 typedef struct _SListNode SListNode;
 
-struct _SListNode
-{
-	SListNode *next;
-	void *data;
-	size_t size;
-};
-
 SList* slist_new(void);
-void   slist_delete(SList *self, bool free_data);
+void   slist_delete(SList *self);
 SList* slist_copy(const SList *self);
 SListNode* slist_node_set(SListNode *self, const void *data, size_t size);
 SListNode* slist_append(SList *self, const void *data, size_t size); 
@@ -30,13 +23,14 @@ SListNode* slist_find(SList *self, const void *target, CmpFunc cmp_func);
 SListNode* slist_insert_before_val(SList *self, const void *target, CmpFunc cmp_func, const void *data, size_t size);
 SList* slist_reverse(SList *self);
 SList* slist_remove_val(SList *self, const void *target, CmpFunc cmp_func, bool remove_all);
-SList* slist_free_val(SList *self, const void *target, CmpFunc cmp_func, bool free_all);
 void slist_set_free_func(SList *self, FreeFunc free_func);
 ssize_t slist_count(const SList *self, const void *target, CmpFunc cmp_func);
 void slist_foreach(SList *self, JustFunc func, void *userdata);
 SList* slist_remove_sibling(SList *self, SListNode *sibling);
-SList* slist_free_sibling(SList *self, SListNode *sibling);
 ssize_t slist_get_length(const SList *self);
+void slist_node_data(const SListNode *self, void *ret);
+SListNode* slist_node_next(const SListNode *self);
+void slist_sort(SList *self, CmpFunc cmp_func);
 
 #define slist_output(self, str_func...)                        \
 	(                                                          \

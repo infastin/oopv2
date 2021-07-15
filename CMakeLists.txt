@@ -38,6 +38,7 @@ add_library(ds STATIC
 	${SRC_DIR}/DataStructs/SList.c
 	${SRC_DIR}/DataStructs/DList.c
 	${SRC_DIR}/DataStructs/BigInt.c
+	${SRC_DIR}/DataStructs/Tree.c
 )
 
 add_library(utils STATIC

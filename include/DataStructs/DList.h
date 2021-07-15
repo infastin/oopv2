@@ -11,14 +11,6 @@ DECLARE_TYPE(DList, dlist, DLIST, Object);
 
 typedef struct _DlistNode DListNode;
 
-struct _DlistNode
-{
-	DListNode *next;
-	DListNode *prev;
-	void *data;
-	size_t size;
-};
-
 typedef enum {
 	DLIST_OUTPUT_TO_RIGHT = 100,
 	DLIST_OUTPUT_TO_LEFT,
@@ -38,12 +30,15 @@ DList* dlist_remove_val(DList *self, const void *target, CmpFunc cmp_func, bool 
 void   dlist_set_free_func(DList *self, FreeFunc free_func);
 void   dlist_foreach(DList *self, JustFunc func, void *userdata);
 ssize_t dlist_count(const DList *self, const void *target, CmpFunc cmp_func);
-DList* dlist_free_val(DList *self, const void *target, CmpFunc cmp_func, bool free_all);
 DList* dlist_remove_sibling(DList *self, DListNode *sibling);
-DList* dlist_free_sibling(DList *self, DListNode *sibling);
 DList* dlist_swap(DList *self, DListNode *a_sib, DListNode *b_sib);
 DList* dlist_splice(DList *self, DListNode *l_sib, DListNode *r_sib, DList *other, DListNode *o_sib);
 ssize_t dlist_get_length(const DList *self);
+void dlist_node_data(const DListNode *self, void *ret);
+DListNode* dlist_node_next(const DListNode *self);
+DListNode* dlist_node_prev(const DListNode *self);
+void dlist_sort(DList *self, CmpFunc cmp_func);
+DList* dlist_reverse(DList *self);
 
 #define dlist_output(self, str_func, side...)                      \
 	(                                                              \

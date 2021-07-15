@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "Utils/Stuff.h"
+#include "Base/Definitions.h"
 
 char* strdup_printf(const char *fmt, ...)
 {
@@ -40,15 +41,15 @@ char* strdup_vprintf(const char *fmt, va_list *ap)
 
 unsigned int pow2(unsigned int value)
 {
-	return (1 << (32 - __builtin_clz(value)));
+	return (1 << (UINT_BIT - __builtin_clz(value)));
 }
 
 unsigned long pow2l(unsigned long value)
 {
-	return (1 << (64 - __builtin_clzl(value)));
+	return (1 << (ULONG_BIT - __builtin_clzl(value)));
 }
 
 unsigned long long pow2ll(unsigned long long value)
 {
-	return (1 << (64 - __builtin_clzl(value)));
+	return (1 << (ULLONG_BIT - __builtin_clzl(value)));
 }

@@ -12,9 +12,22 @@
 
 /* Predefinitions {{{ */
 
+#define MAGIC_NUM 0xAb0bA
+
+typedef struct _InterfaceType InterfaceType;
+
 typedef struct
 {
-	unsigned int magic;
+	unsigned long magic;
+	const InterfaceType* itype;
+	void (*init)(Interface* interface);
+	Interface **ifaces;
+	size_t ifaces_count;
+} InterfaceData;
+
+typedef struct
+{
+	unsigned long magic;
 	const ObjectClass *klass;
 } ObjectData;
 
@@ -30,6 +43,7 @@ typedef struct
 
 #define o_data(s) ((ObjectData*) (s)->private)
 #define oc_data(s) ((ObjectClassData*) (s)->private)
+#define i_data(s) ((InterfaceData*) (s)->private)
 
 /* }}} */
 
@@ -157,20 +171,20 @@ static Object* object_class_ctor(Object *_self, va_list *ap)
 {
 	ObjectClass *self = OBJECT_CLASS(_self);
 
-	ObjectClassData *private = (ObjectClassData*) self->private;
+	ObjectClassData *sdata = oc_data(self);
 
-	private->name = va_arg(*ap, char*);
-	private->super = va_arg(*ap, ObjectClass*);
+	sdata->name = va_arg(*ap, char*);
+	sdata->super = va_arg(*ap, ObjectClass*);
 
-	exit_if_fail(private->super != NULL);
-	exit_if_fail(IS_OBJECT_CLASS(private->super));
+	exit_if_fail(sdata->super != NULL);
+	exit_if_fail(IS_OBJECT_CLASS(sdata->super));
 
-	private->size = va_arg(*ap, size_t);
+	sdata->size = va_arg(*ap, size_t);
 
 	const size_t offset = offsetof(ObjectClass, ctor);
 	memcpy((char*) self + offset, 
-			(char*) private->super + offset, 
-			OBJECT_SIZE(private->super) - offset);
+			(char*) sdata->super + offset, 
+			OBJECT_SIZE(sdata->super) - offset);
 
 	typedef void (*init_class)(ObjectClass* klass);
 
@@ -179,44 +193,46 @@ static Object* object_class_ctor(Object *_self, va_list *ap)
 	if (ic != NULL)
 		ic(self);
 
-	size_t ifaces_count = va_arg(*ap, size_t);
-	private->ifaces_count = oc_data(private->super)->ifaces_count + ifaces_count;
-	private->ifaces = NULL;
+	ObjectClassData *ssdata = oc_data(sdata->super);
 
-	if (private->ifaces_count != 0)
+	size_t ifaces_count = va_arg(*ap, size_t);
+	sdata->ifaces_count = ssdata->ifaces_count + ifaces_count;
+	sdata->ifaces = NULL;
+
+	if (sdata->ifaces_count != 0)
 	{
 		typedef void (*init_interface)(Interface* iface);
 
-		private->ifaces = (Interface**)calloc(sizeof(Interface*), private->ifaces_count);
+		sdata->ifaces = (Interface**)calloc(sizeof(Interface*), sdata->ifaces_count);
 
-		if (private->ifaces == NULL)
+		if (sdata->ifaces == NULL)
 		{
 			msg_critical("couldn't allocate memory for interfaces!");
 			exit(EXIT_FAILURE);
 		}
 
-		if (oc_data(private->super)->ifaces != NULL && oc_data(private->super)->ifaces_count != 0)
+		if (ssdata->ifaces != NULL && ssdata->ifaces_count != 0)
 		{
-			for (int i = 0; i < oc_data(private->super)->ifaces_count; ++i) 
+			for (int i = 0; i < ssdata->ifaces_count; ++i) 
 			{
-				private->ifaces[i] = interface_copy(oc_data(private->super)->ifaces[i]);
+				sdata->ifaces[i] = interface_copy(ssdata->ifaces[i]);
 			}
 		}
 
 		Type itype = va_arg(*ap, Type);
 
-		for (int j = oc_data(private->super)->ifaces_count; itype != 0; itype = va_arg(*ap, Type)) 
+		for (int j = ssdata->ifaces_count; itype != 0; itype = va_arg(*ap, Type)) 
 		{
 			init_interface ii = va_arg(*ap, init_interface);
 			Interface *find;
 
-			if ((find = interface_find(itype, private->ifaces, j)) != NULL)
-				find->init = ii;
+			if ((find = interface_find(itype, sdata->ifaces, j)) != NULL)
+				i_data(find)->init = ii;
 			else
-				private->ifaces[j++] = interface_new(itype, ii);
+				sdata->ifaces[j++] = interface_new(itype, ii);
 		}
 
-		interface_init_all(private->ifaces, private->ifaces_count);
+		interface_init_all(sdata->ifaces, sdata->ifaces_count);
 	}
 
 	return _self;
@@ -319,18 +335,21 @@ Object* object_new(Type object_type, ...)
 	return_val_if_fail(IS_OBJECT_CLASS(object_type), NULL);
 
 	const ObjectClass *class = OBJECT_CLASS(object_type);
-	exit_if_fail(oc_data(class)->size != 0);
+	ObjectClassData *cdata = oc_data(class);
+	exit_if_fail(cdata->size != 0);
 
-	Object *object = (Object*)calloc(1, oc_data(class)->size);
+	Object *object = (Object*)calloc(1, cdata->size);
 
 	if (object == NULL)
 	{
-		msg_error("couldn't allocate memory for object of type '%s'!", oc_data(class)->name);
+		msg_error("couldn't allocate memory for object of type '%s'!", cdata->name);
 		return NULL;
 	}
 
-	o_data(object)->magic = MAGIC_NUM;
-	o_data(object)->klass = class;
+	ObjectData *obdata = o_data(object);
+
+	obdata->magic = MAGIC_NUM;
+	obdata->klass = class;
 
 	va_list ap;
 	va_start(ap, object_type);
@@ -338,7 +357,7 @@ Object* object_new(Type object_type, ...)
 	va_end(ap);
 
 	if (object == NULL)
-		msg_error("couldn't create object of type '%s'!", oc_data(class)->name);
+		msg_error("couldn't create object of type '%s'!", cdata->name);
 
 	return object;
 }
@@ -349,12 +368,14 @@ Object* object_new_stack(Type object_type, void *_object, ...)
 	return_val_if_fail(_object != NULL, NULL);
 
 	const ObjectClass *class = OBJECT_CLASS(object_type);
-	exit_if_fail(oc_data(class)->size != 0);
+	ObjectClassData *cdata = oc_data(class);
+	exit_if_fail(cdata->size != 0);
 
 	Object *object = (Object*) _object;
+	ObjectData *obdata = o_data(object);
 
-	o_data(object)->magic = MAGIC_NUM;
-	o_data(object)->klass = class;
+	obdata->magic = MAGIC_NUM;
+	obdata->klass = class;
 
 	va_list ap;
 	va_start(ap, _object);
@@ -362,7 +383,7 @@ Object* object_new_stack(Type object_type, void *_object, ...)
 	va_end(ap);
 
 	if (object == NULL)
-		msg_error("couldn't create object of type '%s'!", oc_data(class)->name);
+		msg_error("couldn't create object of type '%s'!", cdata->name);
 
 	return object;
 }
@@ -381,25 +402,28 @@ Object* object_copy(const Object *self)
 	return_val_if_fail(IS_OBJECT(self), NULL);
 
 	const ObjectClass *class = OBJECT_GET_CLASS(self);
-	exit_if_fail(oc_data(class)->size != 0);
+	ObjectClassData *cdata = oc_data(class);
+	exit_if_fail(cdata->size != 0);
 
-	Object *object = (Object*)calloc(1, oc_data(class)->size);
+	Object *object = (Object*)calloc(1, cdata->size);
 
 	if (object == NULL)
 	{
 		msg_error("couldn't allocate memory for copy of object of type '%s'!",
-				oc_data(class)->name);
+				cdata->name);
 		return NULL;
 	}
 
-	o_data(object)->magic = MAGIC_NUM;
-	o_data(object)->klass = class;
+	ObjectData *obdata = o_data(object);
+
+	obdata->magic = MAGIC_NUM;
+	obdata->klass = class;
 
 	object = cpy(self, object);
 
 	if (object == NULL)
 		msg_error("couldn't create copy of object of type '%s'!",
-				oc_data(class)->name);
+				cdata->name);
 
 	return object;
 }

@@ -10,6 +10,7 @@
 #include "DataStructs/BigInt.h"
 #include "DataStructs/Array.h"
 #include "Interfaces/StringerInterface.h"
+#include "Utils/Stuff.h"
 
 /* Predefinitions {{{ */
 
@@ -50,7 +51,7 @@ static BigInt* _BigInt_growcap(BigInt *self, size_t add)
 
 	if (mincap > SIZE_MAX - new_allocated)
 	{
-		msg_error("bi capacity overflow!");
+		msg_error("bigint capacity overflow!");
 		return NULL;
 	}
 
@@ -60,7 +61,7 @@ static BigInt* _BigInt_growcap(BigInt *self, size_t add)
 
 	if (words == NULL)
 	{
-		msg_error("couldn't reallocate memory for bi!");
+		msg_error("couldn't reallocate memory for bigint!");
 		return NULL;
 	}
 
@@ -196,7 +197,7 @@ static int _BigInt_divmnu(word_t *q, word_t *r, word_t *u, word_t *v, size_t m, 
 	// same amount.  We may have to append a high-order
 	// digit on the dividend; we do that unconditionally.
 
-	int s = WORD_BIT - ((32 - __builtin_clz(v[n - 1])) + 1);
+	int s = WORD_BIT - ((UINT_BIT - __builtin_clz(v[n - 1])) + 1);
 	vn = (word_t*)calloc(n, sizeof(word_t));
 	return_val_if_fail(vn != NULL, 1);
 
@@ -315,6 +316,16 @@ static void BigInt_divrem_int(const BigInt *dividend, int divisor, BigInt **ret_
 
 static char* _BigInt_string(const BigInt *self)
 {
+	char *result;
+
+	if (self->length == 0)
+	{
+		result = strdup_printf("0");
+		return_val_if_fail(result != NULL, NULL);
+
+		return result;
+	}
+
 	Array *string = array_new(true, true, 1);
 	return_val_if_fail(string != NULL, NULL);
 
@@ -338,10 +349,11 @@ static char* _BigInt_string(const BigInt *self)
 	if (sign == 1)
 		array_prepend(string, GET_PTR(char, '-'));
 
-	char *str = array_steal(string, NULL);
-	array_delete(string, false);
+	result = array_steal(string, NULL);
+	array_delete(string);
+	object_delete((Object*) t);
 
-	return str;
+	return result;
 }
 
 /* }}} */
@@ -378,7 +390,7 @@ static Object* BigInt_ctor(Object *_self, va_list *ap)
 	if (self->words == NULL)
 	{
 		object_delete((Object*) self);
-		msg_error("couldn't allocate memory for bi!");
+		msg_error("couldn't allocate memory for bigint!");
 		return NULL;
 	}
 
@@ -416,7 +428,7 @@ static Object* BigInt_ctor(Object *_self, va_list *ap)
 			if (!isdigit(*p))
 			{
 				object_delete((Object*) self);
-				msg_error("given string is not a number!");
+				msg_warn("given string is not a number!");
 				return NULL;
 			}
 
@@ -446,7 +458,7 @@ static Object* BigInt_ctor(Object *_self, va_list *ap)
 		if (p == numb + 1)
 		{
 			object_delete((Object*) self);
-			msg_error("given string is not a number!");
+			msg_warn("given string is not a number!");
 			return NULL;
 		}
 
@@ -528,7 +540,7 @@ static Object* BigInt_set(Object *_self, va_list *ap)
 		{
 			if (!isdigit(*p))
 			{
-				msg_error("given string is not a number!");
+				msg_warn("given string is not a number!");
 				return NULL;
 			}
 
@@ -557,7 +569,7 @@ static Object* BigInt_set(Object *_self, va_list *ap)
 
 		if (p == numb + 1)
 		{
-			msg_error("given string is not a number!");
+			msg_warn("given string is not a number!");
 			return NULL;
 		}
 

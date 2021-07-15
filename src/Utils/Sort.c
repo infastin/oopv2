@@ -1,8 +1,9 @@
 #include <stdlib.h>
 
 #include "Utils/Sort.h"
+#include "Base/Macros.h"
+#include "Base/Messages.h"
 
-#define mass_cell(m, e, i) (&((char*) (m))[(i) * (e)])
 #define SORT_LEN_THRESHOLD 16
 
 #define SWAP(a, b, elemsize)          \
@@ -20,6 +21,10 @@
 /* Insertion sort */
 void inssort(void *mass, size_t len, size_t elemsize, CmpFunc cmp_func)
 {
+	return_if_fail(mass != NULL);
+	return_if_fail(cmp_func != NULL);
+	return_if_fail(elemsize != 0);
+
 	for (int i = 1; i < len; ++i) 
 	{
 		size_t cur = i;
@@ -78,6 +83,10 @@ static inline void heapify(void *mass, size_t len, size_t elemsize, CmpFunc cmp_
 
 void heapsort(void *mass, size_t len, size_t elemsize, CmpFunc cmp_func)
 {
+	return_if_fail(mass != NULL);
+	return_if_fail(cmp_func != NULL);
+	return_if_fail(elemsize != 0);
+
 	size_t end = len - 1;
 
 	if (len <= 1)
@@ -154,7 +163,7 @@ static inline void quicksort_recursive(void *mass, size_t left, size_t right, si
 	size_t new_pivot;
 
 	int loop_count = 0;
-	const int max_loops = 64 - __builtin_clzll(right - left); /* ~lg N */
+	int max_loops = ULLONG_BIT - __builtin_clzll(right - left); /* ~lg N */
 
 	while (1) 
 	{
@@ -195,5 +204,9 @@ static inline void quicksort_recursive(void *mass, size_t left, size_t right, si
 
 void quicksort(void *mass, size_t len, size_t elemsize, CmpFunc cmp_func)
 {
+	return_if_fail(mass != NULL);
+	return_if_fail(cmp_func != NULL);
+	return_if_fail(elemsize != 0);
+
 	quicksort_recursive(mass, 0, len - 1, elemsize, cmp_func);
 }

@@ -204,10 +204,10 @@ static Object* Array_dtor(Object *_self, va_list *ap)
 	return _self;
 }
 
-static Object* Array_cpy(const Object *_self, Object *_object)
+static Object* Array_cpy(const Object *_self, Object *_object, va_list *ap)
 {
 	const Array *self = ARRAY(_self);
-	Array *object = ARRAY(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object));
+	Array *object = ARRAY(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object, ap));
 
 	object->mass = calloc(1, self->capacity * self->elemsize);
 

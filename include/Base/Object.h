@@ -115,7 +115,7 @@ struct _ObjectClass
 
 	Object* (*ctor)(Object *self, va_list *ap);
 	Object* (*dtor)(Object *self, va_list *ap);
-	Object* (*cpy)(const Object *self, Object *object);
+	Object* (*cpy)(const Object *self, Object *object, va_list *ap);
 
 	Object* (*set)(Object *self, va_list *ap);
 	void  	(*get)(const Object *self, va_list *ap);
@@ -146,7 +146,7 @@ bool   isOf(const void *self, Type object_type);
 Object* object_new(Type object_type, ...);
 Object* object_new_stack(Type object_type, void *object, ...);
 void    object_delete(Object *self, ...);
-Object* object_copy(const Object *self);
+Object* object_copy(const Object *self, ...);
 
 Object* object_set(Object *self, ...);
 void object_get(const Object *self, ...);

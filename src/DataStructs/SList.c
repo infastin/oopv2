@@ -309,10 +309,10 @@ static Object* SList_dtor(Object *_self, va_list *ap)
 	return (Object*) self;
 }
 
-static Object* SList_cpy(const Object *_self, Object *_object)
+static Object* SList_cpy(const Object *_self, Object *_object, va_list *ap)
 {
 	const SList *self = SLIST(_self);
-	SList *object = (SList*) OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object);
+	SList *object = SLIST(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object, ap));
 
 	object->ff = self->ff;
 

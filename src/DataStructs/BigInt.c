@@ -478,10 +478,10 @@ static Object* BigInt_dtor(Object *_self, va_list *ap)
 	return _self;
 }
 
-static Object* BigInt_cpy(const Object *_self, Object *_object)
+static Object* BigInt_cpy(const Object *_self, Object *_object, va_list *ap)
 {
 	const BigInt *self = BIGINT(_self);
-	BigInt *object = BIGINT(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object));
+	BigInt *object = BIGINT(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object, ap));
 
 	object->capacity = self->capacity;
 	object->length = self->length;

@@ -2,6 +2,7 @@
 #define DEFINITIONS_H_CLDPPAUZ
 
 #include <stddef.h>
+#include <stdarg.h>
 
 #define UINT_BIT (sizeof(unsigned int) * 8)
 #define ULONG_BIT (sizeof(unsigned long) * 8)
@@ -13,5 +14,6 @@ typedef void (*VoidFunc)(void);
 typedef int  (*CmpFunc)(const void *a, const void *b);
 typedef void (*FreeFunc)(void *ptr);
 typedef void (*JustFunc)(void *data, void *userdata);
+typedef void (*CpyFunc)(void *ptr, va_list *ap);
 
 #endif /* end of include guard: DEFINITIONS_H_CLDPPAUZ */

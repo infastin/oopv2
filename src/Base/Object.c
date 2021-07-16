@@ -157,7 +157,7 @@ static Object* object_dtor(Object *self, va_list *ap)
 	return self;
 }
 
-static Object* object_cpy(const Object *self, Object *object)
+static Object* object_cpy(const Object *self, Object *object, va_list *ap)
 {
 	return_val_if_fail(IS_OBJECT(self), NULL);
 	return object;
@@ -246,7 +246,7 @@ static Object* object_class_dtor(Object *_self, va_list *ap)
 	return _self;
 }
 
-static Object* object_class_cpy(const Object *_self, Object *object)
+static Object* object_class_cpy(const Object *_self, Object *object, va_list *ap)
 {
 	const ObjectClass *self = OBJECT_CLASS(_self);
 	msg_info("can't copy class '%s'!", oc_data(self)->name);
@@ -320,14 +320,14 @@ static Object* dtor(Object *self, va_list *ap)
 	return class->dtor(self, ap);
 }
 
-static Object* cpy(const Object *self, Object *object)
+static Object* cpy(const Object *self, Object *object, va_list *ap)
 {
 	return_val_if_fail(IS_OBJECT(self) && IS_OBJECT(object), NULL);
 
 	const ObjectClass *class = OBJECT_GET_CLASS(self);
 	exit_if_fail(class->cpy != NULL);
 
-	return class->cpy(self, object);
+	return class->cpy(self, object, ap);
 }
 
 Object* object_new(Type object_type, ...)
@@ -397,7 +397,7 @@ void object_delete(Object *self, ...)
 	va_end(ap);
 }
 
-Object* object_copy(const Object *self)
+Object* object_copy(const Object *self, ...)
 {
 	return_val_if_fail(IS_OBJECT(self), NULL);
 
@@ -419,7 +419,10 @@ Object* object_copy(const Object *self)
 	obdata->magic = MAGIC_NUM;
 	obdata->klass = class;
 
-	object = cpy(self, object);
+	va_list ap;
+	va_start(ap, self);
+	object = cpy(self, object, &ap);
+	va_end(ap);
 
 	if (object == NULL)
 		msg_error("couldn't create copy of object of type '%s'!",

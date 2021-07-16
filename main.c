@@ -143,29 +143,50 @@ void test3()
 	tree_outputln(ct, int_str);
 }
 
+typedef struct _TestInt
+{
+	DListNode parent;
+	int value;
+} TestInt;
+
+void test_int_str(const void *a, va_list *ap)
+{
+	const TestInt *ia = a;
+	printf("%d", ia->value);
+}
+
+int test_int_cmp(const void *a, const void *b)
+{
+	const TestInt *ia = a;
+	const TestInt *ib = b;
+
+	return ia->value - ib->value;
+}
+
 void test4()
 {
 	srand(time(0));
 
-	DList *dl = dlist_new();
+	DList *dl = dlist_new(sizeof(TestInt), NULL);
 
 	for (int i = 0; i < 40; ++i)
 	{
-		dlist_append(dl, GET_PTR(int, rand() % 100), 4);
+		TestInt *n = (TestInt*)dlist_append(dl);
+		n->value = rand() % 100;
 	}
 
-	dlist_outputln(dl, int_str, DLIST_OUTPUT_TO_RIGHT);
-	dlist_outputln(dl, int_str, DLIST_OUTPUT_TO_LEFT);
+	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_RIGHT);
+	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_LEFT);
 
-	dlist_sort(dl, int_cmp);
+	dlist_sort(dl, test_int_cmp);
 
-	dlist_outputln(dl, int_str, DLIST_OUTPUT_TO_RIGHT);
-	dlist_outputln(dl, int_str, DLIST_OUTPUT_TO_LEFT);
+	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_RIGHT);
+	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_LEFT);
 
 	dlist_reverse(dl);
 
-	dlist_outputln(dl, int_str, DLIST_OUTPUT_TO_RIGHT);
-	dlist_outputln(dl, int_str, DLIST_OUTPUT_TO_LEFT);
+	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_RIGHT);
+	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_LEFT);
 }
 
 void test5()
@@ -192,7 +213,7 @@ void test5()
 
 int main(int argc, char *argv[])
 {
-	test3();
+	test4();
 
 	return 0;
 }

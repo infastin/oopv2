@@ -442,10 +442,10 @@ static void Tree_get(const Object *_self, va_list *ap)
 	Tree_lookup(self, key, ret);
 }
 
-static Object* Tree_cpy(const Object *_self, Object *_object)
+static Object* Tree_cpy(const Object *_self, Object *_object, va_list *ap)
 {
 	const Tree *self = TREE(_self);
-	Tree *object = TREE(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object));
+	Tree *object = TREE(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object, ap));
 
 	object->vff = self->vff;
 	object->kff = self->kff;

@@ -12,7 +12,7 @@
  *  DEBUG: 		DEBUG.
  */
 
-#define ENABLE_MSG 0
+#define ENABLE_MSG 1
 
 typedef enum
 {

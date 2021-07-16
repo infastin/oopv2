@@ -10,35 +10,19 @@
 
 typedef enum
 {
-	BLACK,
-	RED
-} tn_color;
-
-typedef enum
-{
 	LEFT,
 	RIGHT
 } r_dir;
-
-struct _TreeNode
-{
-	TreeNode *parent;
-	TreeNode *left;
-	TreeNode *right;
-	void *key;
-	void *value;
-	size_t keysize;
-	size_t valuesize;
-	tn_color color;
-};
 
 struct _Tree
 {
 	Object parent;
 	TreeNode *root;
-	FreeFunc vff;
-	FreeFunc kff;
-	CmpFunc kcf;
+	FreeFunc nff;   // Node free func
+	FreeFunc kff;   // Key free func
+	CmpFunc kcf;    // Key cmp func
+	CpyFunc ncpf;   // Node cpy func
+	size_t size;
 };
 
 static void stringer_interface_init(StringerInterface *iface);
@@ -52,71 +36,34 @@ DEFINE_TYPE_WITH_IFACES(Tree, tree, object, 1,
 
 /* Private methods {{{ */
 
-static void _TreeNode_free(TreeNode *node, FreeFunc vff, FreeFunc kff)
+static void _TreeNode_free(TreeNode *node, FreeFunc nff, FreeFunc kff)
 {
-	if (vff != NULL)
-		vff(*(void**) node->value);
+	if (kff)
+		kff(node->key);
 
-	if (kff != NULL)
-		kff(*(void**) node->key);
-
-	free(node->value);
-	free(node->key);
-	free(node);
+	nff(node);
 }
 
-static void _TreeNode_free_full(TreeNode *node, FreeFunc vff, FreeFunc kff)
+static void _TreeNode_free_full(TreeNode *node, FreeFunc nff, FreeFunc kff)
 {
 	if (node == NULL)
 		return;
 
-	_TreeNode_free_full(node->left, vff, kff);
-	_TreeNode_free_full(node->right, vff, kff);
+	_TreeNode_free_full(node->left, nff, kff);
+	_TreeNode_free_full(node->right, nff, kff);
 
-	if (vff != NULL)
-		vff(*(void**) node->value);
+	if (kff)
+		kff(node->key);
 
-	if (kff != NULL)
-		kff(*(void**) node->key);
-
-	free(node->value);
-	free(node->key);
-	free(node);
+	nff(node);
 }
 
-static TreeNode* _TreeNode_new(const void *key, const void *value, size_t keysize, size_t valuesize)
+static TreeNode* _TreeNode_new(size_t size, void *key)
 {
-	TreeNode *res = salloc(TreeNode, 1);
+	TreeNode *res = (TreeNode*)calloc(1, size);
 	return_val_if_fail(res != NULL, NULL);
 
-	void *k = malloc(keysize);
-
-	if (k == NULL)
-	{
-		free(res);
-		return_val_if_fail(k != NULL, NULL);
-	}
-
-	void *v = malloc(valuesize);
-
-	if (v == NULL)
-	{
-		free(res);
-		free(k);
-		return_val_if_fail(v != NULL, NULL);
-	}
-
-	if (v != NULL)
-		memcpy(v, value, valuesize);
-	else
-		memset(v, 0, valuesize);
-
-	memcpy(k, key, keysize);
-
-	res->key = k;
-	res->value = v;
-	res->keysize = keysize;
-	res->valuesize = valuesize;
+	res->key = key;
 	res->parent = NULL;
 	res->left = NULL;
 	res->right = NULL;
@@ -125,35 +72,15 @@ static TreeNode* _TreeNode_new(const void *key, const void *value, size_t keysiz
 	return res;
 }
 
-static TreeNode* _TreeNode_clone(const TreeNode *node)
+static TreeNode* _TreeNode_clone(const TreeNode *node, size_t size, CpyFunc cpy_func)
 {
-	TreeNode *res = salloc(TreeNode, 1);
+	TreeNode *res = (TreeNode*)calloc(1, size);
 	return_val_if_fail(res != NULL, NULL);
 
-	void *k = malloc(node->keysize);
+	if (cpy_func)
+		cpy_func(res, node);
 
-	if (k == NULL)
-	{
-		free(res);
-		return_val_if_fail(k != NULL, NULL);
-	}
-
-	void *v = malloc(node->valuesize);
-
-	if (v == NULL)
-	{
-		free(res);
-		free(k);
-		return_val_if_fail(v != NULL, NULL);
-	}
-
-	memcpy(k, node->key, node->keysize);
-	memcpy(v, node->value, node->valuesize);
-
-	res->key = k;
-	res->value = v;
-	res->keysize = node->keysize;
-	res->valuesize = node->valuesize;
+	res->key = node->key;
 	res->parent = NULL;
 	res->left = NULL;
 	res->right = NULL;
@@ -162,16 +89,16 @@ static TreeNode* _TreeNode_clone(const TreeNode *node)
 	return res;
 }
 
-static TreeNode* _TreeNode_cpy(const TreeNode *node)
+static TreeNode* _TreeNode_cpy(const TreeNode *node, size_t size, CpyFunc cpy_func)
 {
 	if (node == NULL)
 		return NULL;
 
-	TreeNode *cpy_node = _TreeNode_clone(node);
+	TreeNode *cpy_node = _TreeNode_clone(node, size, cpy_func);
 	return_val_if_fail(cpy_node != NULL, NULL);
 
-	TreeNode *cpy_left = _TreeNode_cpy(node->left);
-	TreeNode *cpy_right = _TreeNode_cpy(node->right);
+	TreeNode *cpy_left = _TreeNode_cpy(node->left, size, cpy_func);
+	TreeNode *cpy_right = _TreeNode_cpy(node->right, size, cpy_func);
 
 	cpy_node->left = cpy_left;
 	cpy_node->right = cpy_right;
@@ -185,7 +112,7 @@ static TreeNode* _TreeNode_cpy(const TreeNode *node)
 	return cpy_node;
 }
 
-static void _Tree_string(const TreeNode *node, StringFunc str_func, va_list *ap)
+static void _Tree_string(const TreeNode *node, StringFunc key_str_func, StringFunc node_str_func, va_list *ap)
 {
 	if (node == NULL)
 		return;
@@ -193,16 +120,23 @@ static void _Tree_string(const TreeNode *node, StringFunc str_func, va_list *ap)
 	va_list ap_copy;
 
 	va_copy(ap_copy, *ap);
-	_Tree_string(node->left, str_func, &ap_copy);
+	_Tree_string(node->left, key_str_func, node_str_func, &ap_copy);
 	va_end(ap_copy);
 
-	va_copy(ap_copy, *ap);
-	str_func(node->key, &ap_copy);
-	printf(" ");
-	va_end(ap_copy);
+	if (node->left != NULL)
+		printf(", ");
 
 	va_copy(ap_copy, *ap);
-	_Tree_string(node->right, str_func, &ap_copy);
+	key_str_func(node->key, &ap_copy);
+	printf(" => ");
+	node_str_func(node, &ap_copy);
+	va_end(ap_copy);
+
+	if (node->right != NULL)
+		printf(", ");
+
+	va_copy(ap_copy, *ap);
+	_Tree_string(node->right, key_str_func, node_str_func, &ap_copy);
 	va_end(ap_copy);
 }
 
@@ -321,29 +255,129 @@ static void _Tree_recolor(Tree *self, TreeNode *node)
 	}
 }
 
-static void _TreeNode_prepare_remove(TreeNode *node, TreeNode **n, TreeNode **c)
+static void _TreeNode_swap_case1(TreeNode *a, TreeNode *b)
+{
+	TreeNode *old_a_left = a->left;
+	TreeNode *old_a_right = a->right;
+
+	TreeNode *old_b_parent = b->parent;
+	TreeNode *old_b_left = b->left;
+	TreeNode *old_b_right = b->right;
+
+	b->parent = a;
+	a->parent = old_b_parent;
+
+	if (old_b_parent != NULL)
+	{
+		if (old_b_parent->left == b)
+			old_b_parent->left = a;
+		else
+			old_b_parent->right = a;
+	}
+
+	b->left = old_a_left;
+	b->right = old_a_left;
+
+	if (old_a_left != NULL)
+		old_a_left->parent = b;
+
+	if (old_a_right != NULL)
+		old_a_right->parent = b;
+
+	if (old_b_left == a)
+	{
+		a->left = b;
+		a->right = old_b_right;
+
+		if (old_b_right != NULL)
+			old_b_right->parent = a;
+	}
+	else
+	{
+		a->right = b;
+		a->left = old_b_left;
+
+		if (old_b_left != NULL)
+			old_b_left->parent = a;
+	}
+}
+
+static void _TreeNode_swap_case2(TreeNode *a, TreeNode *b)
+{
+	TreeNode *old_a_parent = a->parent;
+	TreeNode *old_a_left = a->left;
+	TreeNode *old_a_right = a->right;
+
+	TreeNode *old_b_parent = b->parent;
+	TreeNode *old_b_left = b->left;
+	TreeNode *old_b_right = b->right;
+
+	a->parent = old_b_parent;
+
+	if (old_b_parent != NULL)
+	{
+		if (old_b_parent->left == b)
+			old_b_parent->left = a;
+		else
+			old_b_parent->right = a;
+	}
+
+	b->parent = old_a_parent;
+
+	if (old_a_parent != NULL)
+	{
+		if (old_a_parent->left == a)
+			old_a_parent->left = b;
+		else
+			old_a_parent->right = b;
+	}
+
+	a->left = old_b_left;
+	a->right = old_b_right;
+
+	if (old_b_left != NULL)
+		old_b_left->parent = a;
+
+	if (old_b_right != NULL)
+		old_b_right->parent = a;
+
+	b->left = old_a_left;
+	b->right = old_a_right;
+
+
+	if (old_a_left != NULL)
+		old_a_left->parent = b;
+
+	if (old_a_right != NULL)
+		old_a_right->parent = b;
+}
+
+static void _TreeNode_swap(TreeNode *a, TreeNode *b)
+{
+	if (a->parent == b)
+		_TreeNode_swap_case1(a, b);
+	else if (b->parent == a)
+		_TreeNode_swap_case1(b, a);
+	else
+		_TreeNode_swap_case2(a, b);
+
+	tn_color tmp = a->color;
+	
+	a->color = b->color;
+	b->color = tmp;
+}
+
+static void _TreeNode_prepare_remove(Tree *self, TreeNode *node, TreeNode **n, TreeNode **c)
 {
 	if (node->left != NULL && node->right != NULL)
 	{
 		TreeNode *s = node->right;
 		for (; s->left != NULL; s = s->left);
 
-		void *tmp_value = node->value;
-		void *tmp_key = node->key;
-		size_t tmp_valuesize = node->valuesize;
-		size_t tmp_keysize = node->keysize;
+		_TreeNode_swap(node, s);
 
-		node->value = s->value;
-		node->key = s->key;
-		node->valuesize = s->valuesize;
-		node->keysize = s->keysize;
-
-		s->value = tmp_value;
-		s->key = tmp_key;
-		s->valuesize = tmp_valuesize;
-		s->keysize = tmp_keysize;
-
-		node = s;
+		if (self->root == node)
+			self->root = s;
 	}
 
 	*n = node;
@@ -380,17 +414,28 @@ static Object* Tree_ctor(Object *_self, va_list *ap)
 {
 	Tree *self = TREE(OBJECT_CLASS(OBJECT_TYPE)->ctor(_self, ap));
 
+	size_t size = va_arg(*ap, size_t);
 	CmpFunc key_cmp_func = va_arg(*ap, CmpFunc);
+	FreeFunc key_free_func = va_arg(*ap, FreeFunc);
+	FreeFunc node_free_func = va_arg(*ap, FreeFunc);
+	CpyFunc node_cpy_func = va_arg(*ap, CpyFunc);
 
-	if (key_cmp_func == NULL)
+	if (size < sizeof(TreeNode) || key_cmp_func == NULL)
 	{
 		object_delete(_self, false);
+		return_val_if_fail(size >= sizeof(TreeNode), NULL);
 		return_val_if_fail(key_cmp_func != NULL, NULL);
 	}
 
+	if (node_free_func == NULL)
+		self->nff = free;
+	else
+		self->nff = node_free_func;
+
+	self->kff = key_free_func;
 	self->kcf = key_cmp_func;
-	self->kff = NULL;
-	self->vff = NULL;
+	self->ncpf = node_cpy_func;
+	self->size = size;
 	self->root = NULL;
 
 	return _self;
@@ -401,45 +446,9 @@ static Object* Tree_dtor(Object *_self, va_list *ap)
 	Tree *self = TREE(_self);
 
 	if (self->root != NULL)
-		_TreeNode_free_full(self->root, self->vff, self->kff);
+		_TreeNode_free_full(self->root, self->nff, self->kff);
 
 	return _self;
-}
-
-static TreeNode* Tree_insert(Tree *self, const void *key, const void *value, size_t keysize, size_t valuesize);
-static Tree* Tree_replace(Tree *self, const void *key, const void *value, size_t valuesize);
-static void Tree_lookup(const Tree *self, const void *key, void *ret);
-
-static Object* Tree_set(Object *_self, va_list *ap)
-{
-	Tree *self = TREE(_self);
-
-	const void *key = va_arg(*ap, const void*);
-	const void *value = va_arg(*ap, const void*);
-	size_t keysize = va_arg(*ap, size_t);
-	size_t valuesize = va_arg(*ap, size_t);
-
-	return_val_if_fail(key != NULL, NULL);
-	return_val_if_fail(valuesize != 0, NULL);
-	return_val_if_fail(keysize != 0, NULL);
-
-	if (Tree_replace(self, key, value, valuesize) == NULL)
-		return_val_if_fail(Tree_insert(self, key, value, keysize, valuesize) != NULL, NULL);
-
-	return (Object*) self;
-}
-
-static void Tree_get(const Object *_self, va_list *ap)
-{
-	Tree *self = TREE(_self);
-
-	const void *key = va_arg(*ap, const void*);
-	void *ret = va_arg(*ap, void*);
-
-	return_if_fail(key != NULL);
-	return_if_fail(ret != NULL);
-
-	Tree_lookup(self, key, ret);
 }
 
 static Object* Tree_cpy(const Object *_self, Object *_object, va_list *ap)
@@ -447,10 +456,12 @@ static Object* Tree_cpy(const Object *_self, Object *_object, va_list *ap)
 	const Tree *self = TREE(_self);
 	Tree *object = TREE(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object, ap));
 
-	object->vff = self->vff;
+	object->nff = self->nff;
+	object->ncpf = self->ncpf;
+	object->size = self->size;
 	object->kff = self->kff;
 	object->kcf = self->kcf;
-	object->root = _TreeNode_cpy(self->root);
+	object->root = _TreeNode_cpy(self->root, self->size, self->ncpf);
 
 	return (Object*) object;
 }
@@ -459,19 +470,24 @@ static void Tree_string(const Stringer *_self, va_list *ap)
 {
 	const Tree *self = TREE((const Object*) _self);
 
-	StringFunc str_func = va_arg(*ap, StringFunc);
-	return_if_fail(str_func != NULL);
+	StringFunc key_str_func = va_arg(*ap, StringFunc);
+	return_if_fail(key_str_func != NULL);
 
-	_Tree_string(self->root, str_func, ap);
+	StringFunc node_str_func = va_arg(*ap, StringFunc);
+	return_if_fail(node_str_func != NULL);
+
+	printf("[");
+	_Tree_string(self->root, key_str_func, node_str_func, ap);
+	printf("]");
 }
 
 /* }}} Base */
 
-static TreeNode* Tree_insert(Tree *self, const void *key, const void *value, size_t keysize, size_t valuesize)
+static TreeNode* Tree_insert(Tree *self, void *key)
 {
 	if (self->root == NULL)
 	{
-		self->root = _TreeNode_new(key, value, keysize, valuesize);
+		self->root = _TreeNode_new(self->size, key);
 		return_val_if_fail(self->root != NULL, NULL);
 
 		self->root->color = BLACK;
@@ -512,7 +528,7 @@ static TreeNode* Tree_insert(Tree *self, const void *key, const void *value, siz
 		}
 	}
 
-	TreeNode *node = _TreeNode_new(key, value, keysize, valuesize);
+	TreeNode *node = _TreeNode_new(self->size, key);
 	return_val_if_fail(node != NULL, NULL);
 
 	if (lr == 0)
@@ -527,7 +543,7 @@ static TreeNode* Tree_insert(Tree *self, const void *key, const void *value, siz
 	return node;
 }
 
-static TreeNode* Tree_lookup_node(const Tree *self, const void *key)
+static TreeNode* Tree_lookup(const Tree *self, const void *key)
 {
 	if (self->root == NULL)
 		return NULL;
@@ -549,69 +565,16 @@ static TreeNode* Tree_lookup_node(const Tree *self, const void *key)
 	return NULL;
 }
 
-static void Tree_lookup(const Tree *self, const void *key, void *ret)
-{
-	TreeNode *node = Tree_lookup_node(self, key);
-
-	if (node == NULL)
-		return;
-
-	memcpy(ret, node->value, node->valuesize);
-}
-
-static Tree* Tree_replace(Tree *self, const void *key, const void *value, size_t valuesize)
-{
-	TreeNode *node = Tree_lookup_node(self, key);
-
-	if (node == NULL)
-		return NULL;
-
-	void *v = malloc(valuesize);
-	return_val_if_fail(v != NULL, NULL);
-
-	if (v != NULL)
-		memcpy(v, value, valuesize);
-	else
-		memset(v, 0, valuesize);
-
-	if (self->vff != NULL)
-		self->vff(*(void**) node->value);
-
-	free(node->value);
-	node->value = v;
-
-	return self;
-}
-
-static Tree* Tree_replace_node(Tree *self, TreeNode *node, const void *value, size_t valuesize)
-{
-	void *v = malloc(valuesize);
-	return_val_if_fail(v != NULL, NULL);
-
-	if (v != NULL)
-		memcpy(v, value, valuesize);
-	else
-		memset(v, 0, valuesize);
-
-	if (self->vff != NULL)
-		self->vff(*(void**) node->value);
-
-	free(node->value);
-	node->value = v;
-
-	return self;
-}
-
 static Tree* Tree_remove(Tree *self, const void *key)
 {
-	TreeNode *node = Tree_lookup_node(self, key);
+	TreeNode *node = Tree_lookup(self, key);
 
 	if (node == NULL)
 		return NULL;
 
 	TreeNode *n, *c, *p, *s;
 
-	_TreeNode_prepare_remove(node, &n, &c);
+	_TreeNode_prepare_remove(self, node, &n, &c);
 
 	if (n->color == BLACK)
 	{
@@ -699,7 +662,7 @@ static Tree* Tree_remove(Tree *self, const void *key)
 	if (n->parent == NULL && c != NULL)
 		c->color = BLACK;
 
-	_TreeNode_free(n, self->vff, self->kff);
+	_TreeNode_free(n, self->nff, self->kff);
 
 	return self;
 }
@@ -708,10 +671,11 @@ static Tree* Tree_remove(Tree *self, const void *key)
 
 /* Selectors {{{ */
 
-Tree* tree_new(CmpFunc key_cmp_func)
+Tree* tree_new(size_t size, CmpFunc key_cmp_func, FreeFunc key_free_func, FreeFunc node_free_func, CpyFunc node_cpy_func)
 {
+	return_val_if_fail(size >= sizeof(TreeNode), NULL);
 	return_val_if_fail(key_cmp_func != NULL, NULL);
-	return (Tree*)object_new(TREE_TYPE, key_cmp_func);
+	return (Tree*)object_new(TREE_TYPE, size, key_cmp_func, key_free_func, node_free_func, node_cpy_func);
 }
 
 void tree_delete(Tree *self)
@@ -720,84 +684,26 @@ void tree_delete(Tree *self)
 	object_delete((Object*) self);
 }
 
-Tree* tree_set(Tree *self, const void *key, const void *value, size_t keysize, size_t valuesize)
-{
-	return_val_if_fail(IS_TREE(self), NULL);
-	return_val_if_fail(key != NULL, NULL);
-	return_val_if_fail(keysize != 0, NULL);
-	return_val_if_fail(valuesize != 0, NULL);
-
-	return (Tree*)object_set((Object*) self, key, value, keysize, valuesize);
-}
-
 Tree* tree_copy(const Tree *self)
 {
 	return_val_if_fail(IS_TREE(self), NULL);
 	return (Tree*)object_copy((Object*) self);
 }
 
-void tree_get(const Tree *self, const void *key, void *ret)
-{
-	return_if_fail(IS_TREE(self));
-	return_if_fail(key != NULL);
-	return_if_fail(ret != NULL);
-
-	object_get((Object*) self, key, ret);
-}
-
-TreeNode* tree_insert(Tree *self, const void *key, const void *value, size_t keysize, size_t valuesize)
-{
-	return_val_if_fail(IS_TREE(self), NULL);
-	return_val_if_fail(key != NULL, NULL);
-	return_val_if_fail(keysize != 0, NULL);
-	return_val_if_fail(valuesize != 0, NULL);
-
-	return Tree_insert(self, key, value, keysize, valuesize);
-}
-
-TreeNode* tree_lookup_node(const Tree *self, const void *key)
+TreeNode* tree_insert(Tree *self, void *key)
 {
 	return_val_if_fail(IS_TREE(self), NULL);
 	return_val_if_fail(key != NULL, NULL);
 
-	return Tree_lookup_node(self, key);
+	return Tree_insert(self, key);
 }
 
-void tree_lookup(const Tree *self, const void *key, void *ret)
+TreeNode* tree_lookup(const Tree *self, const void *key)
 {
-	return_if_fail(IS_TREE(self));
-	return_if_fail(key != NULL);
-	return_if_fail(ret != NULL);
+	return_val_if_fail(IS_TREE(self), NULL);
+	return_val_if_fail(key != NULL, NULL);
 
-	Tree_lookup(self, key, ret);
-}
-
-void tree_set_value_free_func(Tree *self, FreeFunc value_free_func)
-{
-	return_if_fail(IS_TREE(self));
-	return_if_fail(value_free_func != NULL);
-
-	self->vff = value_free_func;
-}
-
-void tree_set_key_free_func(Tree *self, FreeFunc key_free_func)
-{
-	return_if_fail(IS_TREE(self));
-	return_if_fail(key_free_func != NULL);
-
-	self->kff = key_free_func;
-}
-
-void tree_node_key(const TreeNode *self, void *ret)
-{
-	return_if_fail(self != NULL);
-	memcpy(ret, self->key, self->keysize);
-}
-
-void tree_node_value(const TreeNode *self, void *ret)
-{
-	return_if_fail(self != NULL);
-	memcpy(ret, self->value, self->valuesize);
+	return Tree_lookup(self, key);
 }
 
 Tree* tree_remove(Tree *self, const void *key)
@@ -805,24 +711,6 @@ Tree* tree_remove(Tree *self, const void *key)
 	return_val_if_fail(IS_TREE(self), NULL);
 	return_val_if_fail(key != NULL, NULL);
 	return Tree_remove(self, key);
-}
-
-Tree* tree_replace(Tree *self, const void *key, const void *value, size_t valuesize)
-{
-	return_val_if_fail(IS_TREE(self), NULL);
-	return_val_if_fail(key != NULL, NULL);
-	return_val_if_fail(valuesize != 0, NULL);
-
-	return Tree_replace(self, key, value, valuesize);
-}
-
-Tree* tree_replace_node(Tree *self, TreeNode *node, const void *value, size_t valuesize)
-{
-	return_val_if_fail(IS_TREE(self), NULL);
-	return_val_if_fail(node != NULL, NULL);
-	return_val_if_fail(valuesize != 0, NULL);
-
-	return Tree_replace_node(self, node, value, valuesize);
 }
 
 /* }}} Selectors */
@@ -839,8 +727,6 @@ static void tree_class_init(TreeClass *klass)
 	OBJECT_CLASS(klass)->ctor = Tree_ctor;
 	OBJECT_CLASS(klass)->dtor = Tree_dtor;
 	OBJECT_CLASS(klass)->cpy = Tree_cpy;
-	OBJECT_CLASS(klass)->set = Tree_set;
-	OBJECT_CLASS(klass)->get = Tree_get;
 }
 
 /* }}} Init */

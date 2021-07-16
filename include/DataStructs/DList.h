@@ -22,10 +22,9 @@ typedef enum {
 	DLIST_OUTPUT_TO_LEFT,
 } DListOutputDirection;
 
-DList* dlist_new(size_t size, FreeFunc free_func);
+DList* dlist_new(size_t size, FreeFunc free_func, CpyFunc cpy_func);
 void   dlist_delete(DList *self);
-DList* dlist_copy(const DList *self, CpyFunc cpy_func);
-DListNode* dlist_node_set(DListNode *self);
+DList* dlist_copy(const DList *self);
 DListNode* dlist_append(DList *self);
 DListNode* dlist_prepend(DList *self);
 DListNode* dlist_insert(DList *self, size_t index);

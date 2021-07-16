@@ -16,7 +16,8 @@ struct _DList
 	Object parent;
 	DListNode *start;
 	DListNode *end;
-	FreeFunc ff;
+	FreeFunc ff; // Node free func
+	CpyFunc cpf; // Node cpy func
 	size_t size;
 	size_t len;
 };
@@ -142,62 +143,59 @@ static DListNode* _DListNode_new(size_t size)
 	return res;
 }
 
+static void _DListNode_swap_case1(DListNode *a, DListNode *b)
+{
+	DListNode *old_a_prev = a->prev;
+	DListNode *old_b_next = b->next;
+
+	a->prev = b;
+	a->next = old_b_next;
+
+	b->next = a;
+	b->prev = old_a_prev;
+
+	if (old_a_prev != NULL)
+		old_a_prev->next = b;
+
+	if (old_b_next != NULL)
+		old_b_next->prev = a;
+}
+
+static void _DListNode_swap_case2(DListNode *a, DListNode *b)
+{
+	DListNode *old_a_prev = a->prev;
+	DListNode *old_a_next = a->next;
+
+	DListNode *old_b_prev = b->prev;
+	DListNode *old_b_next = b->next;
+
+	if (old_a_prev != NULL)
+		old_a_prev->next = b;
+
+	if (old_a_next != NULL)
+		old_a_next->prev = b;
+
+	if (old_b_prev != NULL)
+		old_b_prev->next = a;
+
+	if (old_b_next != NULL)
+		old_b_next->prev = a;
+
+	a->prev = old_b_prev;
+	a->next = old_b_next;
+
+	b->prev = old_a_prev;
+	b->next = old_a_next;
+}
+
 static void _DListNode_swap(DListNode *a, DListNode *b)
 {
-	DListNode *x = a->prev;
-	DListNode *y = a->next;
-
-	DListNode *z = b->prev;
-	DListNode *w = b->next;
-
 	if (a->next == b)
-	{
-		a->prev = b;
-		a->next = w;
-
-		b->next = a;
-		b->prev = x;
-
-		if (x != NULL)
-			x->next = b;
-
-		if (w != NULL)
-			w->prev = a;
-	}
+		_DListNode_swap_case1(a, b);
 	else if (a->prev == b)
-	{
-		a->next = b;
-		a->prev = z;
-
-		b->prev = a;
-		b->next = y;
-
-		if (z != NULL)
-			z->next = a;
-
-		if (y != NULL)
-			y->prev = b;
-	}
+		_DListNode_swap_case1(b, a);
 	else
-	{
-		if (x != NULL)
-			x->next = b;
-
-		if (y != NULL)
-			y->prev = b;
-
-		if (z != NULL)
-			z->next = a;
-
-		if (w != NULL)
-			w->prev = a;
-
-		a->prev = z;
-		a->next = w;
-
-		b->prev = x;
-		b->next = y;
-	}
+		_DListNode_swap_case2(a, b);
 }
 
 /* }}} Other */
@@ -216,12 +214,7 @@ static DList* _DList_rf_val(DList *self, const void *target, CmpFunc cmp_func, b
 			if (current == self->start)
 			{
 				self->start = current->next;
-
-				if (self->ff != NULL)
-					self->ff(current);
-				else
-					free(current);
-
+				self->ff(current);
 				current = self->start;
 
 				if (current == NULL)
@@ -239,7 +232,6 @@ static DList* _DList_rf_val(DList *self, const void *target, CmpFunc cmp_func, b
 				DListNode *tmp = current->prev;
 
 				self->ff(current);
-
 				current = tmp->next;
 			}
 
@@ -269,9 +261,7 @@ static DList* _DList_rf_sibling(DList *self, DListNode *sibling)
 			if (current == self->start)
 			{
 				self->start = current->next;
-
 				self->ff(current);
-
 				current = self->start;
 
 				if (current == NULL)
@@ -315,6 +305,7 @@ static Object* DList_ctor(Object *_self, va_list *ap)
 
 	size_t size = va_arg(*ap, size_t);
 	FreeFunc free_func = va_arg(*ap, FreeFunc);
+	CpyFunc cpy_func = va_arg(*ap, CpyFunc);
 
 	if (size < sizeof(DListNode))
 	{
@@ -327,6 +318,7 @@ static Object* DList_ctor(Object *_self, va_list *ap)
 	else
 		self->ff = free_func;
 
+	self->cpf = cpy_func;
 	self->start = NULL;
 	self->end = NULL;
 	self->len = 0;
@@ -346,9 +338,7 @@ static Object* DList_dtor(Object *_self, va_list *ap)
 		while (current != NULL) 
 		{
 			DListNode *next = current->next;
-
 			self->ff(current);
-
 			current = next;
 		}
 	}
@@ -361,8 +351,8 @@ static Object* DList_cpy(const Object *_self, Object *_object, va_list *ap)
 	const DList *self = DLIST(_self);
 	DList *object = DLIST(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object, ap));
 
-	CpyFunc cpy_func = va_arg(*ap, CpyFunc);
-
+	object->cpf = self->cpf;
+	object->ff = self->ff;
 	object->start = NULL;
 	object->end = NULL;
 	object->len = self->len;
@@ -379,11 +369,11 @@ static Object* DList_cpy(const Object *_self, Object *_object, va_list *ap)
 		return_val_if_fail(start != NULL, NULL);
 	}
 
-	if (cpy_func != NULL)
+	if (object->cpf != NULL)
 	{
 		va_list ap_copy;
 		va_copy(*ap, ap_copy);
-		cpy_func(start, &ap_copy);
+		object->cpf(start, self->start);
 		va_end(ap_copy);
 	}
 
@@ -402,18 +392,21 @@ static Object* DList_cpy(const Object *_self, Object *_object, va_list *ap)
 			return_val_if_fail(o_prev_next != NULL, NULL);
 		}
 
-		if (cpy_func != NULL)
+		if (object->cpf != NULL)
 		{
 			va_list ap_copy;
 			va_copy(*ap, ap_copy);
-			cpy_func(o_prev_next, &ap_copy);
+			object->cpf(o_prev_next, s_current);
 			va_end(ap_copy);
 		}
 
 		o_prev->next = o_prev_next;
-		o_prev = o_prev->next;
+		o_prev_next->prev = o_prev;
+		o_prev = o_prev_next;
 		s_current = s_current->next;
 	}
+
+	object->end = o_prev;
 
 	return (Object*) object;
 }
@@ -770,10 +763,10 @@ static DList* DList_reverse(DList *self)
 
 /* Selectors {{{ */
 
-DList* dlist_new(size_t size, FreeFunc free_func)
+DList* dlist_new(size_t size, FreeFunc free_func, CpyFunc cpy_func)
 {
 	return_val_if_fail(size >= sizeof(DListNode), NULL);
-	return (DList*)object_new(DLIST_TYPE, size, free_func);
+	return (DList*)object_new(DLIST_TYPE, size, free_func, cpy_func);
 }
 
 DListNode* dlist_append(DList *self)
@@ -848,10 +841,10 @@ void dlist_delete(DList *self)
 	object_delete((Object*) self);
 }
 
-DList* dlist_copy(const DList *self, CpyFunc cpy_func)
+DList* dlist_copy(const DList *self)
 {
 	return_val_if_fail(IS_DLIST(self), NULL);
-	return (DList*)object_copy((const Object*) self, cpy_func);
+	return (DList*)object_copy((const Object*) self);
 }
 
 DList* dlist_swap(DList *self, DListNode *a, DListNode *b)

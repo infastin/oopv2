@@ -14,6 +14,6 @@ typedef void (*VoidFunc)(void);
 typedef int  (*CmpFunc)(const void *a, const void *b);
 typedef void (*FreeFunc)(void *ptr);
 typedef void (*JustFunc)(void *data, void *userdata);
-typedef void (*CpyFunc)(void *ptr, va_list *ap);
+typedef void (*CpyFunc)(void *dst, const void *src);
 
 #endif /* end of include guard: DEFINITIONS_H_CLDPPAUZ */

@@ -11,19 +11,14 @@
 
 /* Predefinitions {{{ */
 
-struct _SListNode
-{
-	SListNode *next;
-	void *data;
-	size_t size;
-};
-
 struct _SList
 {
 	Object parent;
 	SListNode *start;
 	SListNode *end;
-	FreeFunc ff;
+	FreeFunc ff; // Node free func
+	CpyFunc cpf; // Node cpy func
+	size_t size;
 	size_t len;
 };
 
@@ -71,7 +66,7 @@ SListNode* _SList_merge(SListNode *first, SListNode *second, SListNode **end, Cm
 			break;
 		}
 
-		if (cmp_func(f->data, s->data) <= 0)
+		if (cmp_func(f, s) <= 0)
 		{
 			*linkp = f;
 			linkp = &f->next;
@@ -132,29 +127,22 @@ SListNode* _SList_merge_sort(SListNode *start, SListNode **end, size_t len, CmpF
 
 /* Other {{{ */
 
-static SListNode* _SListNode_new(size_t size, const void *data)
+static SListNode* _SListNode_new(size_t size)
 {
-	SListNode *res = salloc(SListNode, 1);
+	SListNode *res = (SListNode*)calloc(1, size);
 	return_val_if_fail(res != NULL, NULL);
 
-	void *dt = malloc(size);
-
-	if (dt == NULL)
-	{
-		free(res);
-		return_val_if_fail(dt != NULL, NULL);
-	}
-
-	if (data != NULL)
-		memcpy(dt, data, size);
-	else
-		memset(dt, 0, size);
-
-	res->size = size;
-	res->data = dt;
 	res->next = NULL;
 
 	return res;
+}
+
+static void _SListNode_swap(SListNode *a, SListNode *b)
+{
+	SListNode *tmp = a->next;
+
+	a->next = b->next;
+	b->next = tmp;
 }
 
 /* }}} */
@@ -169,17 +157,12 @@ static SList* _SList_rf_val(SList *self, const void *target, CmpFunc cmp_func, b
 
 	while (current != NULL) 
 	{
-		if (cmp_func(current->data, target) == 0)
+		if (cmp_func(current, target) == 0)
 		{
 			if (prev == NULL)
 			{
 				self->start = current->next;
-
-				if (self->ff != NULL)
-					self->ff(*(void**) current->data);
-
-				free(current->data);
-				free(current);
+				self->ff(current);
 				current = self->start;
 
 				if (current == NULL)
@@ -188,12 +171,7 @@ static SList* _SList_rf_val(SList *self, const void *target, CmpFunc cmp_func, b
 			else 
 			{
 				prev->next = current->next;
-
-				if (self->ff != NULL)
-					self->ff(*(void**) current->data);
-
-				free(current->data);
-				free(current);
+				self->ff(current);
 				current = prev->next;
 
 				if (current == NULL)
@@ -228,12 +206,7 @@ static SList* _SList_rf_sibling(SList *self, SListNode *sibling)
 			if (prev == NULL)
 			{
 				self->start = current->next;
-
-				if (self->ff != NULL)
-					self->ff(*(void**) current->data);
-
-				free(current->data);
-				free(current);
+				self->ff(current);
 				current = self->start;
 
 				if (current == NULL)
@@ -242,12 +215,7 @@ static SList* _SList_rf_sibling(SList *self, SListNode *sibling)
 			else
 			{
 				prev->next = current->next;
-
-				if (self->ff != NULL)
-					self->ff(*(void**) current->data);
-
-				free(current->data);
-				free(current);
+				self->ff(current);
 				current = prev->next;
 
 				if (current == NULL)
@@ -277,10 +245,26 @@ static Object* SList_ctor(Object *_self, va_list *ap)
 {
 	SList *self = SLIST(OBJECT_CLASS(OBJECT_TYPE)->ctor(_self, ap));
 
-	self->ff = NULL;
+	size_t size = va_arg(*ap, size_t);
+	FreeFunc free_func = va_arg(*ap, FreeFunc);
+	CpyFunc cpy_func = va_arg(*ap, CpyFunc);
+
+	if (size < sizeof(SListNode))
+	{
+		object_delete(_self);
+		return_val_if_fail(size >= sizeof(SListNode), NULL);
+	}
+
+	if (free_func == NULL)
+		self->ff = free;
+	else
+		self->ff = free_func;
+
+	self->cpf = cpy_func;
 	self->start = NULL;
 	self->end = NULL;
 	self->len = 0;
+	self->size = size;
 
 	return _self;
 }
@@ -295,13 +279,8 @@ static Object* SList_dtor(Object *_self, va_list *ap)
 
 		while (current != NULL) 
 		{
-			if (self->ff != NULL)
-				self->ff(*(void**) current->data);
-
-			free(current->data);
-
 			SListNode *next = current->next;
-			free(current);
+			self->ff(current);
 			current = next;
 		}
 	}
@@ -314,21 +293,30 @@ static Object* SList_cpy(const Object *_self, Object *_object, va_list *ap)
 	const SList *self = SLIST(_self);
 	SList *object = SLIST(OBJECT_CLASS(OBJECT_TYPE)->cpy(_self, _object, ap));
 
+	object->cpf = self->cpf;
 	object->ff = self->ff;
-
 	object->start = NULL;
 	object->end = NULL;
 	object->len = self->len;
+	object->size = self->size;
 
 	if (self->start == NULL)
 		return (Object*) object;
 
-	SListNode *start = _SListNode_new(self->start->size, self->start->data);
+	SListNode *start = _SListNode_new(self->size);
 
 	if (start == NULL)
 	{
 		object_delete((Object*) object, 0);
 		return_val_if_fail(start != NULL, NULL);
+	}
+
+	if (object->cpf != NULL)
+	{
+		va_list ap_copy;
+		va_copy(*ap, ap_copy);
+		object->cpf(start, self->start);
+		va_end(ap_copy);
 	}
 
 	object->start = start;
@@ -338,7 +326,7 @@ static Object* SList_cpy(const Object *_self, Object *_object, va_list *ap)
 
 	while (s_current != NULL) 
 	{
-		SListNode *o_prev_next = _SListNode_new(s_current->size, s_current->data);
+		SListNode *o_prev_next = _SListNode_new(object->size);
 
 		if (o_prev_next == NULL)
 		{
@@ -346,10 +334,20 @@ static Object* SList_cpy(const Object *_self, Object *_object, va_list *ap)
 			return_val_if_fail(o_prev_next != NULL, NULL);
 		}
 
+		if (object->cpf != NULL)
+		{
+			va_list ap_copy;
+			va_copy(*ap, ap_copy);
+			object->cpf(o_prev_next, s_current);
+			va_end(ap_copy);
+		}
+
 		o_prev->next = o_prev_next;
-		o_prev = o_prev->next;
+		o_prev = o_prev_next;
 		s_current = s_current->next;
 	}
+
+	object->end = o_prev;
 
 	return (Object*) object;
 }
@@ -358,11 +356,11 @@ static Object* SList_cpy(const Object *_self, Object *_object, va_list *ap)
 
 /* Adding values {{{ */
 
-static SListNode* SList_append(SList *self, const void *data, size_t size)
+static SListNode* SList_append(SList *self)
 {
 	if (self->start == NULL)
 	{
-		self->start = _SListNode_new(size, data);
+		self->start = _SListNode_new(self->size);
 		return_val_if_fail(self->start != NULL, NULL);
 		self->end = self->start;
 		self->len++;
@@ -370,7 +368,7 @@ static SListNode* SList_append(SList *self, const void *data, size_t size)
 		return self->start;
 	}
 
-	SListNode *end = _SListNode_new(size, data);
+	SListNode *end = _SListNode_new(self->size);
 	return_val_if_fail(end, NULL);
 
 	self->end->next = end;
@@ -380,11 +378,11 @@ static SListNode* SList_append(SList *self, const void *data, size_t size)
 	return end;
 }
 
-static SListNode* SList_prepend(SList *self, const void *data, size_t size)
+static SListNode* SList_prepend(SList *self)
 {
 	if (self->start == NULL)
 	{
-		self->start = _SListNode_new(size, data);
+		self->start = _SListNode_new(self->size);
 		return_val_if_fail(self->start != NULL, NULL);
 		self->end = self->start;
 		self->len++;
@@ -392,7 +390,7 @@ static SListNode* SList_prepend(SList *self, const void *data, size_t size)
 		return self->start;
 	}
 
-	SListNode *start = _SListNode_new(size, data);
+	SListNode *start = _SListNode_new(self->size);
 	return_val_if_fail(start != NULL, NULL);
 
 	start->next = self->start;
@@ -402,7 +400,7 @@ static SListNode* SList_prepend(SList *self, const void *data, size_t size)
 	return start;
 }
 
-static SListNode* SList_insert_before(SList *self, SListNode *sibling, const void *data, size_t size)
+static SListNode* SList_insert_before(SList *self, SListNode *sibling)
 {
 	SListNode *current = self->start;
 	SListNode *prev = NULL;
@@ -411,7 +409,7 @@ static SListNode* SList_insert_before(SList *self, SListNode *sibling, const voi
 	{
 		if (current == sibling)
 		{
-			SListNode *before = _SListNode_new(size, data);
+			SListNode *before = _SListNode_new(self->size);
 			return_val_if_fail(before != NULL, NULL);
 
 			if (prev == NULL)
@@ -436,16 +434,16 @@ static SListNode* SList_insert_before(SList *self, SListNode *sibling, const voi
 	return NULL;
 }
 
-static SListNode* SList_insert_before_val(SList *self, const void *target, CmpFunc cmp_func, const void *data, size_t size)
+static SListNode* SList_insert_before_val(SList *self, const void *target, CmpFunc cmp_func)
 {
 	SListNode *current = self->start;
 	SListNode *prev = NULL;
 
 	while (current != NULL) 
 	{
-		if (cmp_func(current->data, target) == 0)
+		if (cmp_func(current, target) == 0)
 		{
-			SListNode *before = _SListNode_new(size, data);
+			SListNode *before = _SListNode_new(self->size);
 			return_val_if_fail(before != NULL, NULL);
 
 			if (prev == NULL)
@@ -470,11 +468,11 @@ static SListNode* SList_insert_before_val(SList *self, const void *target, CmpFu
 	return NULL;
 }
 
-static SListNode* SList_insert(SList *self, size_t index, const void *data, size_t size)
+static SListNode* SList_insert(SList *self, size_t index)
 {
 	if (self->start == NULL)
 	{
-		self->start = _SListNode_new(size, data);
+		self->start = _SListNode_new(self->size);
 		return_val_if_fail(self->start != NULL, NULL);
 		self->end = self->start;
 		self->len++;
@@ -482,7 +480,7 @@ static SListNode* SList_insert(SList *self, size_t index, const void *data, size
 		return self->start;
 	}
 
-	SListNode *node = _SListNode_new(size, data);
+	SListNode *node = _SListNode_new(self->size);
 	return_val_if_fail(node != NULL, NULL);
 
 	if (index < self->len)
@@ -550,25 +548,13 @@ static SListNode* SList_find(SList *self, const void *target, CmpFunc cmp_func)
 
 	while (current != NULL) 
 	{
-		if (cmp_func(current->data, target) == 0)
+		if (cmp_func(current, target) == 0)
 			return current;
 
 		current = current->next;
 	}
 
 	return NULL;
-}
-
-static void SListNode_swap(SListNode *a, SListNode *b)
-{
-	void *tmp_data = a->data;
-	size_t tmp_size = a->size;
-
-	a->data = b->data;
-	a->size = b->size;
-
-	b->data = tmp_data;
-	b->size = tmp_size;
 }
 
 static size_t SList_count(const SList *self, const void *target, CmpFunc cmp_func)
@@ -579,7 +565,7 @@ static size_t SList_count(const SList *self, const void *target, CmpFunc cmp_fun
 
 	while (current != NULL) 
 	{
-		if (cmp_func(current->data, target) == 0)
+		if (cmp_func(current, target) == 0)
 			count++;
 
 		current = current->next;
@@ -626,7 +612,7 @@ static void SList_string(const Stringer *_self, va_list *ap)
 		va_list ap_copy;
 		va_copy(ap_copy, *ap);
 
-		str_func(current->data, &ap_copy);
+		str_func(current, &ap_copy);
 		if (current->next != NULL)
 			printf(" ");
 
@@ -644,9 +630,26 @@ static void SList_foreach(SList *self, JustFunc func, void *userdata)
 
 	while (current != NULL) 
 	{
-		func(current->data, userdata);
+		func(current, userdata);
 		current = current->next;
 	}
+}
+
+static SList* SList_swap(SList *self, SListNode *a, SListNode *b)
+{
+	_SListNode_swap(a, b);
+
+	if (a == self->start)
+		self->start = b;
+	else if (b == self->start)
+		self->start = a;
+
+	if (a == self->end)
+		self->end = b;
+	else if (b == self->end)
+		self->end = a;
+
+	return self;
 }
 
 /* }}} */
@@ -655,9 +658,10 @@ static void SList_foreach(SList *self, JustFunc func, void *userdata)
 
 /* Selectors {{{ */
 
-SList* slist_new(void)
+SList* slist_new(size_t size, FreeFunc free_func, CpyFunc cpy_func)
 {
-	return (SList*)object_new(SLIST_TYPE);
+	return_val_if_fail(size >= sizeof(SListNode), NULL);
+	return (SList*)object_new(SLIST_TYPE, size, free_func, cpy_func);
 }
 
 void slist_delete(SList *self)
@@ -672,32 +676,28 @@ SList* slist_copy(const SList *self)
 	return (SList*)object_copy((const Object*) self);
 }
 
-SListNode* slist_append(SList *self, const void *data, size_t size)
+SListNode* slist_append(SList *self)
 {
 	return_val_if_fail(IS_SLIST(self), NULL);
-	return_val_if_fail(size != 0, NULL);
-	return SList_append(self, data, size);
+	return SList_append(self);
 }
 
-SListNode* slist_insert(SList *self, size_t index, const void *data, size_t size)
+SListNode* slist_insert(SList *self, size_t index)
 {
 	return_val_if_fail(IS_SLIST(self), NULL);
-	return_val_if_fail(size != 0, NULL);
-	return SList_insert(self, index, data, size);
+	return SList_insert(self, index);
 }
 
-SListNode* slist_prepend(SList *self, const void *data, size_t size)
+SListNode* slist_prepend(SList *self)
 {
 	return_val_if_fail(IS_SLIST(self), NULL);
-	return_val_if_fail(size != 0, NULL);
-	return SList_prepend(self, data, size);
+	return SList_prepend(self);
 }
 
-SListNode* slist_insert_before(SList *self, SListNode *sibling, const void *data, size_t size)
+SListNode* slist_insert_before(SList *self, SListNode *sibling)
 {
 	return_val_if_fail(IS_SLIST(self), NULL);
-	return_val_if_fail(size != 0, NULL);
-	return SList_insert_before(self, sibling, data, size);
+	return SList_insert_before(self, sibling);
 }
 
 SListNode* slist_find(SList* self, const void *target, CmpFunc cmp_func)
@@ -718,13 +718,6 @@ SList* slist_remove_val(SList *self, const void *target, CmpFunc cmp_func, bool 
 	return_val_if_fail(IS_SLIST(self), NULL);
 	return_val_if_fail(cmp_func != NULL, NULL);
 	return SList_remove_val(self, target, cmp_func, remove_all);
-}
-
-void slist_set_free_func(SList *self, FreeFunc free_func)
-{
-	return_if_fail(IS_SLIST(self));
-	return_if_fail(free_func != NULL);
-	self->ff = free_func;
 }
 
 ssize_t slist_get_length(const SList *self)
@@ -753,29 +746,11 @@ SList* slist_remove_sibling(SList *self, SListNode *sibling)
 	return SList_remove_sibling(self, sibling);
 }
 
-SListNode* slist_insert_before_val(SList *self, const void *target, CmpFunc cmp_func, const void *data, size_t size)
+SListNode* slist_insert_before_val(SList *self, const void *target, CmpFunc cmp_func)
 {
 	return_val_if_fail(IS_SLIST(self), NULL);
-	return_val_if_fail(size != 0, NULL);
 	return_val_if_fail(cmp_func != NULL, NULL);
-	return SList_insert_before_val(self, target, cmp_func, data, size);
-}
-
-SListNode* slist_node_set(SListNode *self, const void *data, size_t size)
-{
-	return_val_if_fail(size != 0, NULL);
-	void *new_data = malloc(size);
-	return_val_if_fail(new_data != NULL, NULL);
-
-	self->data = new_data;
-	self->size = size;
-
-	if (data != NULL)
-		memcpy(self->data, data, self->size);
-	else
-		memset(self->data, 0, self->size);
-
-	return self;
+	return SList_insert_before_val(self, target, cmp_func);
 }
 
 void slist_sort(SList *self, CmpFunc cmp_func)
@@ -793,25 +768,13 @@ void slist_sort(SList *self, CmpFunc cmp_func)
 	}
 }
 
-void slist_node_data(const SListNode *self, void *ret)
+SList* slist_swap(SList *self, SListNode *a, SListNode *b)
 {
-	return_if_fail(self != NULL);
-	return_if_fail(ret != NULL);
-	memcpy(ret, self->data, self->size);
-}
+	return_val_if_fail(IS_SLIST(self), NULL);
+	return_val_if_fail(a != NULL, NULL);
+	return_val_if_fail(b != NULL, NULL);
 
-SListNode* slist_node_next(const SListNode *self)
-{
-	return_val_if_fail(self != NULL, NULL);
-	return self->next;
-}
-
-void slist_node_swap(SListNode *a, SListNode *b)
-{
-	return_if_fail(a != NULL);
-	return_if_fail(b != NULL);
-
-	SListNode_swap(a, b);
+	return SList_swap(self, a, b);
 }
 
 /* }}} */

@@ -6,6 +6,12 @@
 
 #define GET_PTR(type, ...) ((type*) &((type){__VA_ARGS__}))
 
+#define INT_TO_PTR(v) ((void*) (long) (v))
+#define PTR_TO_INT(v) ((int) (long) (v))
+
+#define UINT_TO_PTR(v) ((void*) (unsigned long) (v))
+#define PTR_TO_UINT(v) ((unsigned int) (unsigned long) (v))
+
 #define TOSTR0(v) #v
 #define TOSTR(v) TOSTR0(v)
 

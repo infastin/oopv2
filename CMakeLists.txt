@@ -60,6 +60,7 @@ set(EXECUTABLES
 	task5
 	task6
 	task7_1
+	task7_2
 )
 
 set(LIBRARIES

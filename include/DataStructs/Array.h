@@ -25,6 +25,7 @@ Array* array_remove_range(Array *self, size_t index, size_t len);
 Array* array_remove_val(Array *self, const void *target, CmpFunc cmp_func, bool remove_all);
 void array_sort(Array *self, CmpFunc cmp_func);
 bool array_binary_search(Array *self, const void *target, CmpFunc cmp_func, size_t *index);
+bool array_linear_search(const Array *self, const void *target, CmpFunc cmp_func, size_t *index);
 Array* array_unique(Array *self, CmpFunc cmp_func);
 void array_delete(Array *self);
 void* array_steal(Array *self, size_t *len);

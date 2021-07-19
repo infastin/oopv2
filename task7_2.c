@@ -26,9 +26,9 @@ Array* test_array_new(void)
 	return array_new(false, false, sizeof(TestArray), NULL);
 }
 
-bool test_array_find(Array *arr, int key, size_t *index)
+bool test_array_find(const Array *arr, int key, size_t *index)
 {
-	return array_binary_search(arr, GET_PTR(TestArray, key, 0), test_array_cmp, index);
+	return array_linear_search(arr, GET_PTR(TestArray, key, 0), test_array_cmp, index);
 }
 
 void test_array_set(Array *arr, int key, int value)
@@ -42,13 +42,16 @@ void test_array_set(Array *arr, int key, int value)
 		array_append(arr, GET_PTR(TestArray, key, value));
 }
 
-void test_array_append(Array *arr, int key, int value)
+void test_array_append(Array *arr, int key, int value, bool dont_check)
 {
-	size_t index;
-	bool check = test_array_find(arr, key, &index);
+	if (dont_check == false)
+	{
+		size_t index;
+		bool check = test_array_find(arr, key, &index);
 
-	if (check == true)
-		return;
+		if (check == true)
+			return;
+	}
 
 	array_append(arr, GET_PTR(TestArray, key, value));
 }
@@ -62,18 +65,52 @@ void test_array_remove(Array *arr, int key)
 		array_remove_index(arr, index);
 }
 
+void test_array_get(const Array *arr, int key, TestArray *ta)
+{
+	size_t index;
+	bool check = test_array_find(arr, key, &index);
+
+	if (check == false)
+		return;
+
+	array_get(arr, index, ta);
+}
+
 int main(int argc, char *argv[])
 {
 	srand(time(0));
 
 	Array *a = test_array_new();
 
-	for (int i = 0; i < 1000000; ++i) 
+	clock_t start = clock();
+
+	for (int i = 0; i < 5000000; ++i)
 	{
-		test_array_append(a, i, rand());
+		test_array_append(a, i, rand(), true);
 	}
 
+	clock_t end = clock();
+
+	printf("Вставка 5000000 эл.: %lf секунд\n", (double) (end - start) / CLOCKS_PER_SEC);
+
+	start = clock();
+	test_array_remove(a, 100000);
+	end = clock();
+
+	printf("Удаление среди 5000000 эл.: %lf секунд\n", (double) (end - start) / CLOCKS_PER_SEC);
+
+	start = clock();
+	TestArray ta;
+	test_array_get(a, 10000, &ta);
+	end = clock();
+
+	printf("Поиск среди 5000000 эл.: %lf секунд\n", (double) (end - start) / CLOCKS_PER_SEC);
+
+	start = clock();
 	array_delete(a);
+	end = clock();
+
+	printf("Освобождение массива из 5000000 эл.: %lf секунд\n", (double) (end - start) / CLOCKS_PER_SEC);
 
 	return 0;
 }

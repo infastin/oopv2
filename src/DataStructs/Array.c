@@ -407,6 +407,15 @@ static void Array_sort(Array *self, CmpFunc cmp_func)
 	quicksort(self->mass, len, self->elemsize, cmp_func);
 }
 
+static bool Array_linear_search(const Array *self, const void *target, CmpFunc cmp_func, size_t *index)
+{
+	if (self->len == 0)
+		return false;
+
+	size_t len = (self->zero_terminated) ? (self->len - 1) : (self->len);
+	return linear_search(self->mass, target, len, self->elemsize, cmp_func, index);
+}
+
 static bool Array_binary_search(Array *self, const void *target, CmpFunc cmp_func, size_t *index)
 {
 	if (self->len == 0)
@@ -619,6 +628,13 @@ bool array_binary_search(Array *self, const void *target, CmpFunc cmp_func, size
 	return_val_if_fail(IS_ARRAY(self), false);
 	return_val_if_fail(cmp_func != NULL, false);
 	return Array_binary_search(self, target, cmp_func, index);
+}
+
+bool array_linear_search(const Array *self, const void *target, CmpFunc cmp_func, size_t *index)
+{
+	return_val_if_fail(IS_ARRAY(self), false);
+	return_val_if_fail(cmp_func != NULL, false);
+	return Array_linear_search(self, target, cmp_func, index);
 }
 
 Array* array_unique(Array *self, CmpFunc cmp_func)

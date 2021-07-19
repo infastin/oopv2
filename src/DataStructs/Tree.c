@@ -5,6 +5,7 @@
 
 #include "Base.h"
 #include "DataStructs/Tree.h"
+#include "DataStructs/Array.h"
 
 /* Predefinitions {{{ */
 
@@ -49,13 +50,34 @@ static void _TreeNode_free_full(TreeNode *node, FreeFunc nff, FreeFunc kff)
 	if (node == NULL)
 		return;
 
-	_TreeNode_free_full(node->left, nff, kff);
-	_TreeNode_free_full(node->right, nff, kff);
+	TreeNode *current = node;
 
-	if (kff)
-		kff(node->key);
+	while (current != NULL) 
+	{
+		if (current->left != NULL)
+			current = current->left;
+		else if (current->right != NULL)
+			current = current->right;
+		else
+		{
+			TreeNode *parent = current->parent;
+			
+			if (parent != NULL)
+			{
+				if (parent->left == current)
+					parent->left = NULL;
+				else
+					parent->right = NULL;
+			}
 
-	nff(node);
+			if (kff)
+				kff(current->key);
+
+			nff(current);
+
+			current = parent;
+		}
+	}
 }
 
 static TreeNode* _TreeNode_new(size_t size, void *key)
@@ -94,22 +116,38 @@ static TreeNode* _TreeNode_cpy(const TreeNode *node, size_t size, CpyFunc cpy_fu
 	if (node == NULL)
 		return NULL;
 
-	TreeNode *cpy_node = _TreeNode_clone(node, size, cpy_func);
+	TreeNode *root = _TreeNode_clone(node, size, cpy_func);
+	TreeNode *cpy_node = root;
 	return_val_if_fail(cpy_node != NULL, NULL);
 
-	TreeNode *cpy_left = _TreeNode_cpy(node->left, size, cpy_func);
-	TreeNode *cpy_right = _TreeNode_cpy(node->right, size, cpy_func);
+	const TreeNode *orig_node = node;
 
-	cpy_node->left = cpy_left;
-	cpy_node->right = cpy_right;
+	while (orig_node != NULL) 
+	{
+		if (orig_node->left != NULL && cpy_node->left == NULL)
+		{
+			cpy_node->left = _TreeNode_clone(orig_node->left, size, cpy_func);
+			cpy_node->left->parent = cpy_node;
 
-	if (cpy_left != NULL)
-		cpy_left->parent = cpy_node;
-	
-	if (cpy_right != NULL)
-		cpy_right->parent = cpy_node;
+			orig_node = orig_node->left;
+			cpy_node = cpy_node->left;
+		}
+		else if (orig_node->right != NULL && cpy_node->right == NULL)
+		{
+			cpy_node->right = _TreeNode_clone(orig_node->right, size, cpy_func);
+			cpy_node->right->parent = cpy_node;
 
-	return cpy_node;
+			orig_node = orig_node->right;
+			cpy_node = cpy_node->right;
+		}
+		else
+		{
+			orig_node = orig_node->parent;
+			cpy_node = cpy_node->parent;
+		}
+	}
+
+	return root;
 }
 
 static void _Tree_string(const TreeNode *node, StringFunc key_str_func, StringFunc node_str_func, va_list *ap)
@@ -693,23 +731,18 @@ Tree* tree_copy(const Tree *self)
 TreeNode* tree_insert(Tree *self, void *key)
 {
 	return_val_if_fail(IS_TREE(self), NULL);
-	return_val_if_fail(key != NULL, NULL);
-
 	return Tree_insert(self, key);
 }
 
 TreeNode* tree_lookup(const Tree *self, const void *key)
 {
 	return_val_if_fail(IS_TREE(self), NULL);
-	return_val_if_fail(key != NULL, NULL);
-
 	return Tree_lookup(self, key);
 }
 
 Tree* tree_remove(Tree *self, const void *key)
 {
 	return_val_if_fail(IS_TREE(self), NULL);
-	return_val_if_fail(key != NULL, NULL);
 	return Tree_remove(self, key);
 }
 

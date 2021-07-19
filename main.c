@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <limits.h>
+#include <string.h>
 
 #include "Base.h"
 #include "DataStructs/BigInt.h"
@@ -30,6 +31,12 @@ typedef struct _TestInt
 	int value;
 } TestInt;
 
+typedef struct _TestString
+{
+	DListNode parent;
+	char *value;
+} TestString;
+
 typedef struct _TreeInt
 {
 	TreeNode parent;
@@ -50,6 +57,36 @@ int test_int_cmp(const void *a, const void *b)
 	return ia->value - ib->value;
 }
 
+void test_int_cpy(void *_dst, const void *_src)
+{
+	TestInt *dst = _dst;
+	const TestInt *src = _src;
+
+	dst->value = src->value;
+}
+
+void test_string_str(const void *a, va_list *ap)
+{
+	const TestString *ia = a;
+	printf("%s", ia->value);
+}
+
+int test_string_cmp(const void *a, const void *b)
+{
+	const TestString *ia = a;
+	const TestString *ib = b;
+
+	return strcmp(ia->value, ib->value);
+}
+
+void test_string_cpy(void *_dst, const void *_src)
+{
+	TestString *dst = _dst;
+	const TestString *src = _src;
+
+	dst->value = strdup(src->value);
+}
+
 void tree_int_cpy(void *_dst, const void *_src)
 {
 	TreeInt *dst = _dst;
@@ -62,14 +99,6 @@ void tree_int_str(const void *a, va_list *ap)
 {
 	const TreeInt *ia = a;
 	printf("%d", ia->value);
-}
-
-void test_int_cpy(void *_dst, const void *_src)
-{
-	TestInt *dst = _dst;
-	const TestInt *src = _src;
-
-	dst->value = src->value;
 }
 
 void test1()
@@ -182,35 +211,50 @@ void test3()
 	tree_outputln(ct, int_str, tree_int_str);
 }
 
+static char *rand_string(size_t size)
+{
+	char *str = malloc(size + 1);
+	const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJK";
+	if (size) {
+		--size;
+		for (size_t n = 0; n < size; n++) {
+			int key = rand() % (int) (sizeof charset - 1);
+			str[n] = charset[key];
+		}
+		str[size] = '\0';
+	}
+	return str;
+}
+
 void test4()
 {
 	srand(time(0));
 
-	DList *dl = dlist_new(sizeof(TestInt), NULL, test_int_cpy);
+	DList *dl = dlist_new(sizeof(TestString), NULL, test_string_cpy);
 
-	for (int i = 0; i < 40; ++i)
+	for (int i = 0; i < 10; ++i)
 	{
-		TestInt *n = (TestInt*)dlist_append(dl);
-		n->value = rand() % 100;
+		TestString *n = (TestString*)dlist_append(dl);
+		n->value = rand_string(i + 1);
 	}
 
-	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_RIGHT);
-	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_LEFT);
+	dlist_outputln(dl, test_string_str, DLIST_OUTPUT_TO_RIGHT);
+	dlist_outputln(dl, test_string_str, DLIST_OUTPUT_TO_LEFT);
 
-	dlist_sort(dl, test_int_cmp);
+	dlist_sort(dl, test_string_cmp);
 
-	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_RIGHT);
-	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_LEFT);
+	dlist_outputln(dl, test_string_str, DLIST_OUTPUT_TO_RIGHT);
+	dlist_outputln(dl, test_string_str, DLIST_OUTPUT_TO_LEFT);
 
 	dlist_reverse(dl);
 
-	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_RIGHT);
-	dlist_outputln(dl, test_int_str, DLIST_OUTPUT_TO_LEFT);
+	dlist_outputln(dl, test_string_str, DLIST_OUTPUT_TO_RIGHT);
+	dlist_outputln(dl, test_string_str, DLIST_OUTPUT_TO_LEFT);
 
 	DList *cp = dlist_copy(dl);
 
-	dlist_outputln(cp, test_int_str, DLIST_OUTPUT_TO_RIGHT);
-	dlist_outputln(cp, test_int_str, DLIST_OUTPUT_TO_LEFT);
+	dlist_outputln(cp, test_string_str, DLIST_OUTPUT_TO_RIGHT);
+	dlist_outputln(cp, test_string_str, DLIST_OUTPUT_TO_LEFT);
 }
 
 void test5()
@@ -236,7 +280,7 @@ void test5()
 
 int main(int argc, char *argv[])
 {
-	test3();
+	test4();
 
 	return 0;
 }

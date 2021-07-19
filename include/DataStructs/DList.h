@@ -11,6 +11,8 @@ DECLARE_TYPE(DList, dlist, DLIST, Object);
 
 typedef struct _DlistNode DListNode;
 
+/* Dont touch fields, if you want it to work correctly */
+
 struct _DlistNode
 {
 	DListNode *next;
@@ -40,6 +42,8 @@ ssize_t dlist_get_length(const DList *self);
 void dlist_sort(DList *self, CmpFunc cmp_func);
 DList* dlist_reverse(DList *self);
 DList* dlist_swap(DList *self, DListNode *a, DListNode *b);
+DListNode* dlist_pop(DList *self);
+bool dlist_is_empty(const DList *self);
 
 #define dlist_output(self, str_func, side...)                      \
 	(                                                              \

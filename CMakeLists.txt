@@ -57,6 +57,9 @@ target_link_libraries(interfaces base)
 
 set(EXECUTABLES
 	main
+	task5
+	task6
+	task7_1
 )
 
 set(LIBRARIES

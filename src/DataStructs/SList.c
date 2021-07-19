@@ -538,6 +538,40 @@ static SList* SList_remove_sibling(SList *self, SListNode *sibling)
 	return _SList_rf_sibling(self, sibling);
 }
 
+static SListNode* SList_pop(SList *self)
+{
+	if (self->len == 0)
+		return NULL;
+
+	SListNode *res;
+
+	if (self->len == 1)
+	{
+		res = self->start;
+		self->start = NULL;
+		self->end = NULL;
+	}
+	else
+	{
+		SListNode *current = self->start;
+		SListNode *prev = NULL;
+
+		while (current != self->end) 
+		{
+			prev = current;
+			current = current->next;
+		}
+
+		res = current;
+		self->end = prev;
+		self->end->next = NULL;
+	}
+
+	self->len--;
+
+	return res;
+}
+
 /* }}} */
 
 /* Other {{{ */
@@ -775,6 +809,19 @@ SList* slist_swap(SList *self, SListNode *a, SListNode *b)
 	return_val_if_fail(b != NULL, NULL);
 
 	return SList_swap(self, a, b);
+}
+
+SListNode* slist_pop(SList *self)
+{
+	return_val_if_fail(IS_SLIST(self), NULL);
+	return SList_pop(self);
+}
+
+bool slist_is_empty(const SList *self)
+{
+	return_val_if_fail(IS_SLIST(self), NULL);
+	return (self->len == 0) ? true : false;
+
 }
 
 /* }}} */

@@ -15,6 +15,8 @@ typedef enum
 
 typedef struct _TreeNode TreeNode;
 
+/* Dont touch fields, if you want it to work correctly */
+
 struct _TreeNode
 {
 	TreeNode *parent;

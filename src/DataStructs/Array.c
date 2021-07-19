@@ -42,6 +42,9 @@ static Array* _Array_growcap(Array *self, size_t add)
 	if (add == 0)
 		return self;
 
+	if (self->len + add <= self->capacity)
+		return self;
+
 	size_t mincap = self->capacity + add;
 	size_t new_allocated = (mincap >> 3) + (mincap < 9 ? 3 : 6);
 
@@ -164,6 +167,7 @@ static Object* Array_ctor(Object *_self, va_list *ap)
 	bool clear = (bool) va_arg(*ap, int);
 	bool zero_terminated = (bool) va_arg(*ap, int);
 	size_t elemsize = va_arg(*ap, size_t);
+	FreeFunc ff = va_arg(*ap, FreeFunc);
 
 	if (clear)
 		self->mass = calloc(1, elemsize);
@@ -177,9 +181,9 @@ static Object* Array_ctor(Object *_self, va_list *ap)
 		return NULL;
 	}
 
+	self->ff = ff;
 	self->clear = clear;
 	self->zero_terminated = zero_terminated;
-	self->ff = NULL;
 	self->elemsize = elemsize;
 	self->capacity = 1;
 	
@@ -347,6 +351,27 @@ static Array* Array_remove_index(Array *self, size_t index)
 	return self;
 }
 
+static void* Array_pop(Array *self)
+{
+	if (self->len == 0)
+		return NULL;
+
+	if (self->zero_terminated && self->len < 2)
+		return NULL;
+
+	void *ret = malloc(self->elemsize);
+	return_val_if_fail(ret != NULL, NULL);
+
+	int last_idx = (self->zero_terminated) ? (self->len - 2) : (self->len - 1);
+
+	memcpy(ret, arr_cell(self, last_idx), self->elemsize);
+	memmove(arr_cell(self, last_idx), arr_cell(self, last_idx + 1), (self->len - last_idx - 1) * self->elemsize);
+
+	self->len--;
+
+	return ret;
+}
+
 static Array* Array_remove_range(Array *self, size_t index, size_t len)
 {
 	if (index + len >= self->len)
@@ -418,7 +443,7 @@ static Array* Array_remove_val(Array *self, const void *target, CmpFunc cmp_func
 
 static Array* Array_unique(Array *self, CmpFunc cmp_func)
 {
-	Array *result = array_new(self->clear, self->zero_terminated, self->elemsize);
+	Array *result = array_new(self->clear, self->zero_terminated, self->elemsize, self->ff);
 
 	return_val_if_fail(result != NULL, NULL);
 
@@ -496,10 +521,10 @@ static void* Array_steal(Array *self, size_t *len)
 
 /* Selectors {{{ */
 
-Array* array_new(bool clear, bool zero_terminated, size_t elemsize)
+Array* array_new(bool clear, bool zero_terminated, size_t elemsize, FreeFunc free_func)
 {
 	return_val_if_fail(elemsize != 0, NULL);
-	return (Array*)object_new(ARRAY_TYPE, clear, zero_terminated, elemsize);
+	return (Array*)object_new(ARRAY_TYPE, clear, zero_terminated, elemsize, free_func);
 }
 
 Array* array_set(Array *self, size_t index, const void *data)
@@ -603,12 +628,6 @@ Array* array_unique(Array *self, CmpFunc cmp_func)
 	return Array_unique(self, cmp_func);
 }
 
-void array_set_free_func(Array *self, FreeFunc free_func)
-{
-	return_if_fail(IS_ARRAY(self));
-	self->ff = free_func;
-}
-
 void* array_steal(Array *self, size_t *len)
 {
 	return_val_if_fail(IS_ARRAY(self), NULL);
@@ -619,6 +638,18 @@ ssize_t array_get_length(const Array *self)
 {
 	return_val_if_fail(IS_ARRAY(self), -1);
 	return self->len;
+}
+
+void* array_pop(Array *self)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+	return Array_pop(self);
+}
+
+bool array_is_empty(const Array *self)
+{
+	return_val_if_fail(IS_ARRAY(self), NULL);
+	return (self->len == 0) ? true : false;
 }
 
 /* }}} */

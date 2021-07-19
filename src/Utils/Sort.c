@@ -163,7 +163,7 @@ static inline void quicksort_recursive(void *mass, size_t left, size_t right, si
 	size_t new_pivot;
 
 	int loop_count = 0;
-	int max_loops = ULLONG_BIT - __builtin_clzll(right - left); /* ~lg N */
+	int max_loops = ULONG_BIT - __builtin_clzl(right - left);
 
 	while (1) 
 	{

@@ -46,6 +46,9 @@ static BigInt* _BigInt_growcap(BigInt *self, size_t add)
 	if (add == 0)
 		return self;
 
+	if (self->length + add <= self->capacity)
+		return self;
+
 	size_t mincap = self->capacity + add;
 	size_t new_allocated = (mincap >> 3) + (mincap < 9 ? 3 : 6);
 
@@ -326,7 +329,7 @@ static char* _BigInt_string(const BigInt *self)
 		return result;
 	}
 
-	Array *string = array_new(true, true, 1);
+	Array *string = array_new(true, true, 1, NULL);
 	return_val_if_fail(string != NULL, NULL);
 
 	BigInt *t = (BigInt*)object_copy((const Object*) self);

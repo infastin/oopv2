@@ -619,6 +619,32 @@ static DList* DList_remove_sibling(DList *self, DListNode *sibling)
 	return _DList_rf_sibling(self, sibling);
 }
 
+static DListNode* DList_pop(DList *self)
+{
+	if (self->len == 0)
+		return NULL;
+
+	DListNode *res;
+
+	if (self->len == 1)
+	{
+		res = self->start;
+		self->start = NULL;
+		self->end = NULL;
+	}
+	else
+	{
+		res = self->end;
+		self->end = self->end->prev;
+		self->end->next = NULL;
+		res->prev = NULL;
+	}
+
+	self->len--;
+
+	return res;
+}
+
 /* }}} */
 
 /* Other {{{ */
@@ -882,6 +908,18 @@ DList* dlist_reverse(DList *self)
 {
 	return_val_if_fail(IS_DLIST(self), NULL);
 	return DList_reverse(self);
+}
+
+DListNode* dlist_pop(DList *self)
+{
+	return_val_if_fail(IS_DLIST(self), NULL);
+	return DList_pop(self);
+}
+
+bool dlist_is_empty(const DList *self)
+{
+	return_val_if_fail(IS_DLIST(self), NULL);
+	return (self->len == 0) ? true : false;
 }
 
 /* }}} */

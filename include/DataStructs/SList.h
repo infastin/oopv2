@@ -11,6 +11,8 @@ DECLARE_TYPE(SList, slist, SLIST, Object);
 
 typedef struct _SListNode SListNode;
 
+/* Dont touch fields, if you want it to work correctly */
+
 struct _SListNode
 {
 	SListNode *next;
@@ -33,6 +35,8 @@ SList* slist_remove_sibling(SList *self, SListNode *sibling);
 ssize_t slist_get_length(const SList *self);
 void slist_sort(SList *self, CmpFunc cmp_func);
 void slist_node_swap(SListNode *a, SListNode *b);
+SListNode* slist_pop(SList *self);
+bool slist_is_empty(const SList *self);
 
 #define slist_output(self, str_func...)                        \
 	(                                                          \

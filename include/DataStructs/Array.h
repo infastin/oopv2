@@ -10,7 +10,7 @@
 #define ARRAY_TYPE (array_get_type())
 DECLARE_TYPE(Array, array, ARRAY, Object);
 
-Array* array_new(bool clear, bool zero_terminated, size_t elemsize);
+Array* array_new(bool clear, bool zero_terminated, size_t elemsize, FreeFunc free_func);
 Array* array_copy(const Array *self);
 Array* array_set(Array *self, size_t index, const void *data);
 void array_get(const Array *self, size_t index, void *ret);
@@ -27,9 +27,10 @@ void array_sort(Array *self, CmpFunc cmp_func);
 bool array_binary_search(Array *self, const void *target, CmpFunc cmp_func, size_t *index);
 Array* array_unique(Array *self, CmpFunc cmp_func);
 void array_delete(Array *self);
-void array_set_free_func(Array *self, FreeFunc free_func);
 void* array_steal(Array *self, size_t *len);
 ssize_t array_get_length(const Array *self);
+void* array_pop(Array *self);
+bool array_is_empty(const Array *self);
 
 #define array_output(self, str_func...)                        \
 	(                                                          \

@@ -14,9 +14,9 @@
 
 /* Predefinitions {{{ */
 
-typedef unsigned int		word_t;
-typedef unsigned long long	lword_t;
-typedef long long			slword_t;
+typedef uint32_t word_t;
+typedef uint64_t lword_t;
+typedef int64_t	 slword_t;
 
 struct _BigInt
 {
@@ -33,11 +33,13 @@ DEFINE_TYPE_WITH_IFACES(BigInt, bi, object, 1,
 		USE_INTERFACE(STRINGER_INTERFACE_TYPE, stringer_interface_init));
 
 #define WORD_BIT 32 // Bits per word
-#define WORD_MASK ((1ULL << WORD_BIT) - 1) // Word mask 
+#define WORD_MASK (((1U << (WORD_BIT - 1U)) - 1U) * 2U + 1U) // Word mask
+#define WORD_MAX (WORD_MASK)
 #define WORD_BASE (1ULL << WORD_BIT) // Word base
 #define BI_ZERO ((BigInt*)object_new(BIGINT_TYPE, BI_INIT_INT, 0))
 
 /* }}} */
+
 
 /* Private methods {{{ */
 
@@ -95,7 +97,9 @@ static BigInt* _BigInt_add(const BigInt *hi, const BigInt *lo)
 
 		word_t new_word = hi_word + lo_word + carry;
 
-		if (hi_word > new_word || lo_word > new_word)
+		if (WORD_MAX - lo_word == 0 && carry != 0)
+			carry = 0x1;
+		else if (hi_word > WORD_MAX - lo_word - carry)
 			carry = 0x1;
 		else
 			carry = 0;
@@ -108,7 +112,7 @@ static BigInt* _BigInt_add(const BigInt *hi, const BigInt *lo)
 		word_t hi_word = hi->words[i];
 		word_t new_word = hi_word + carry;
 
-		if (hi_word > new_word)
+		if (hi_word > WORD_MAX - carry)
 			carry = 0x1;
 		else
 			carry = 0;
@@ -142,7 +146,9 @@ static BigInt* _BigInt_sub(const BigInt *hi, const BigInt *lo)
 
 		word_t new_word = hi_word - lo_word - carry;
 
-		if (new_word > hi_word && new_word > lo_word)
+		if (hi_word - lo_word == 0 && carry != 0)
+			carry = 0x1;
+		else if (lo_word > hi_word || lo_word + carry > hi_word)
 			carry = 0x1;
 		else
 			carry = 0;
@@ -155,7 +161,7 @@ static BigInt* _BigInt_sub(const BigInt *hi, const BigInt *lo)
 		word_t hi_word = hi->words[i];
 		word_t new_word = hi_word - carry;
 
-		if (new_word > hi_word)
+		if (hi_word < carry)
 			carry = 0x1;
 		else
 			carry = 0;

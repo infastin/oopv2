@@ -10,8 +10,8 @@ int main(int argc, char *argv[])
 {
 	srand(time(0));
 
-	BigInt *bi1 = bi_new_str("1231654981236789");
-	BigInt *bi2 = bi_new_int(rand());
+	BigInt *bi1 = bi_new_str("36893488147419103231");
+	BigInt *bi2 = bi_new_str("36893488147419103231");
 
 	printf("bi1:\n");
 	bi_outputln(bi1);

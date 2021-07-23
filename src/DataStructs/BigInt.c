@@ -37,9 +37,19 @@ DEFINE_TYPE_WITH_IFACES(BigInt, bi, object, 1,
 #define WORD_MAX (WORD_MASK)
 #define WORD_BASE (1ULL << WORD_BIT) // Word base
 #define BI_ZERO ((BigInt*)object_new(BIGINT_TYPE, BI_INIT_INT, 0))
+#define BI_ONE ((BigInt*)object_new(BIGINT_TYPE, BI_INIT_INT, 1))
+
+#define bi_get_bit(self, bit) (((self)->words[(bit) / WORD_BIT] & (1 << ((bit) % WORD_BIT))) ? 1 : 0)
+
+#define bi_set_bit(self, bit, val)                                         \
+	{                                                                      \
+		if ((val) == 0)                                                    \
+			(self)->words[(bit) / WORD_BIT] &= ~(1 << ((bit) % WORD_BIT)); \
+		else                                                               \
+			(self)->words[(bit) / WORD_BIT] |= 1 << ((bit) % WORD_BIT);    \
+	}
 
 /* }}} */
-
 
 /* Private methods {{{ */
 
@@ -174,6 +184,62 @@ static BigInt* _BigInt_sub(const BigInt *hi, const BigInt *lo)
 	return result;
 }
 
+static BigInt* BigInt_lshift(BigInt *self, size_t shift);
+static int BigInt_cmp(const BigInt *a, const BigInt *b);
+
+/**
+ * @brief 
+ *
+ * @param q Quotient
+ * @param r Remainder
+ * @param u Dividend
+ * @param v Divisor
+ *
+ * @return 
+ */
+static int _BigInt_div_long(BigInt **q, BigInt **r, const BigInt *u, const BigInt *v)
+{
+	size_t u_bits = (u->length - 1) * WORD_BIT + (WORD_BIT - __builtin_clz(u->words[u->length - 1]));
+
+	for (size_t i = u_bits - 1; i >= 0; --i) 
+	{
+		BigInt_lshift(*r, 1);
+		int u_bit = bi_get_bit(u, i);
+		if (u_bit != 0)
+		{
+			bi_set_bit(*r, 0, u_bit);
+
+			if ((*r)->length == 0)
+				(*r)->length = 1; 
+		}
+
+		if (BigInt_cmp(*r, v) >= 0)
+		{
+			BigInt *new_r = _BigInt_sub(*r, v);
+			object_delete((Object*) *r);
+			*r = new_r;
+			bi_set_bit(*q, i, 1);
+		}
+
+		if (i == 0)
+			break;
+	}
+
+	return 0;
+}
+
+/**
+ * @brief Generic implementation of Donald Knuth’s Algorithm D from Hacker’s Delight
+ *
+ * @param q Quotient
+ * @param r Remainder
+ * @param u Dividend
+ * @param v Divisor
+ * @param m Length of dividend in words
+ * @param n Length of divisor in words
+ *
+ * @return 
+ */
 static int _BigInt_divmnu(word_t *q, word_t *r, word_t *u, word_t *v, size_t m, size_t n)
 {
 	lword_t b = WORD_BASE; // Number base
@@ -1093,14 +1159,16 @@ static void BigInt_divrem(const BigInt *dividend, const BigInt *divisor, BigInt 
 	}
 
 	quot->length = m;
-	rem->length = m;
+	rem->length = 0;
 
 	q = quot->words;
 	r = rem->words;
 	u = dividend->words;
 	v = divisor->words;
 
-	int err = _BigInt_divmnu(q, r, u, v, m, n);
+	//int err = _BigInt_divmnu(q, r, u, v, m, n);
+
+	int err = _BigInt_div_long(&quot, &rem, dividend, divisor);
 
 	if (err != 0)
 	{
